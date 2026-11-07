@@ -30,6 +30,16 @@ class Database:
                     PRIMARY KEY(user_id, place_id, day)
                 );
                 CREATE TABLE IF NOT EXISTS quests (id TEXT PRIMARY KEY, payload TEXT);
+                CREATE TABLE IF NOT EXISTS conversations (
+                    id TEXT PRIMARY KEY, user_id TEXT NOT NULL, payload TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS plans (
+                    id TEXT PRIMARY KEY, user_id TEXT NOT NULL, payload TEXT NOT NULL,
+                    confirmed INTEGER NOT NULL DEFAULT 0
+                );
+                CREATE TABLE IF NOT EXISTS plan_awards (
+                    user_id TEXT, day TEXT, PRIMARY KEY(user_id, day)
+                );
             """)
             start = now.replace(hour=0, minute=0, second=0, microsecond=0)
             start -= timedelta(days=start.weekday())
@@ -73,3 +83,34 @@ class Database:
 
     def save_quest(self, connection, quest):
         connection.execute("INSERT INTO quests VALUES (?,?)", (quest["id"], json.dumps(quest)))
+
+    def conversation(self, conversation_id, user):
+        with self.connect() as connection:
+            row = connection.execute("SELECT payload FROM conversations WHERE id=? AND user_id=?",
+                                     (conversation_id, user)).fetchone()
+        return json.loads(row[0]) if row else None
+
+    def save_exchange(self, conversation_id, user, state, plan):
+        with self.connect() as connection:
+            connection.execute(
+                "INSERT INTO conversations VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload",
+                (conversation_id, user, json.dumps(state)),
+            )
+            if plan:
+                connection.execute("INSERT INTO plans (id,user_id,payload) VALUES (?,?,?)",
+                                   (plan["plan_id"], user, json.dumps(plan)))
+
+    def confirm_plan(self, plan_id, user, day):
+        """Confirm a saved plan once; serialize daily awards across plans and retries."""
+        with self.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute("SELECT payload,confirmed FROM plans WHERE id=? AND user_id=?",
+                                     (plan_id, user)).fetchone()
+            if row is None:
+                return None
+            awarded = 0
+            if not row["confirmed"]:
+                connection.execute("UPDATE plans SET confirmed=1 WHERE id=?", (plan_id,))
+                inserted = connection.execute("INSERT OR IGNORE INTO plan_awards VALUES (?,?)", (user, day))
+                awarded = 30 if inserted.rowcount else 0
+            return json.loads(row["payload"]), awarded

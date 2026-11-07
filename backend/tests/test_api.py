@@ -144,5 +144,5 @@ def test_cors_and_openapi(client):
         "Access-Control-Request-Headers": "Content-Type,X-User-Id"})
     assert response.headers["access-control-allow-origin"] == "http://localhost:5173"
     schema = client.get("/openapi.json").json()
-    assert len(schema["paths"]) == 5
+    assert len(schema["paths"]) == 7
     assert "CheckinResponse" in schema["components"]["schemas"]

@@ -12,6 +12,9 @@ from .errors import APIError
 from .routes import map_router, merchant_router, system_router
 from .schemas import Error
 from .services import MapService
+from .ai import AIClient
+from .ask_routes import ask_router
+from .planning import PlanningService
 
 
 def create_app(db_path=None, demo_mode=None, places_path=None):
@@ -29,6 +32,7 @@ def create_app(db_path=None, demo_mode=None, places_path=None):
     app = FastAPI(title="Quest API", version="0.1.0", lifespan=lifespan,
                   responses={422: {"model": Error}, 404: {"model": Error}})
     app.state.map_service = service
+    app.state.planning_service = PlanningService(service, AIClient(settings))
     app.add_middleware(CORSMiddleware,
                        allow_origins=list(settings.cors_origins),
                        allow_methods=["GET", "POST"],
@@ -47,4 +51,5 @@ def create_app(db_path=None, demo_mode=None, places_path=None):
     app.include_router(map_router)
     app.include_router(merchant_router)
     app.include_router(system_router)
+    app.include_router(ask_router)
     return app
