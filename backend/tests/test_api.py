@@ -3,9 +3,9 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 from fastapi.testclient import TestClient
 
-from map_api import services
+from app import services
 from main import create_app
-from map_api.seed import ZONE
+from app.seed import ZONE
 
 
 @pytest.fixture

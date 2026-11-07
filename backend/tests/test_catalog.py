@@ -3,9 +3,9 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
-from map_api.application import create_app
-from map_api.catalog import load_places
-from map_api.seed import PLACES, ZONE
+from app.application import create_app
+from app.catalog import load_places
+from app.seed import PLACES, ZONE
 
 
 def source_place(source_id, categories, **overrides):

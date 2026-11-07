@@ -15,7 +15,7 @@ from .services import MapService
 
 
 def create_app(db_path=None, demo_mode=None, places_path=None):
-    """Create the standalone map service. Header identities are development-only."""
+    """Create the shared Quest backend. Header identities are development-only."""
     settings = Settings.from_env(db_path, demo_mode, places_path)
     database = Database(settings.database_path)
     service = MapService(settings, database)
@@ -26,7 +26,7 @@ def create_app(db_path=None, demo_mode=None, places_path=None):
         database.initialize(service.now())
         yield
 
-    app = FastAPI(title="Quest Map API", version="0.1.0", lifespan=lifespan,
+    app = FastAPI(title="Quest API", version="0.1.0", lifespan=lifespan,
                   responses={422: {"model": Error}, 404: {"model": Error}})
     app.state.map_service = service
     app.add_middleware(CORSMiddleware,

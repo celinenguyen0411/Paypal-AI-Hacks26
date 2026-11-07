@@ -3,7 +3,7 @@
 `raw/` holds unchanged copies of the supplied Madison place datasets. Keep these
 files as source snapshots; put any future cleaned API-ready dataset in `processed/`.
 The API loads `raw/entities.json` once at startup and combines eligible records with
-the six demo fixtures from `map_api/seed.py`. The other two files remain source snapshots
+the six demo fixtures from `app/seed.py`. The other two files remain source snapshots
 for future enrichment; they are not loaded into the running API.
 
 | File | Records | Contents | Intended role |

@@ -1,6 +1,8 @@
-# Quest Map API
+# Quest API
 
-Standalone FastAPI backend for the map portion of the supplied API contract.
+Shared FastAPI backend for Quest's map and ask/planning features.
+Map endpoints are implemented. `/ask` and plan confirmation are not implemented yet;
+they will be added to this same application.
 No API keys or external services are required. Python 3.11+ is required.
 
 ## Run
@@ -8,7 +10,7 @@ No API keys or external services are required. Python 3.11+ is required.
 From the repository root:
 
 ```sh
-cd backend/map
+cd backend
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -r requirements.txt
@@ -20,21 +22,21 @@ uvicorn main:app --reload --host 127.0.0.1 --port 8000
 - Base URL: `http://localhost:8000`
 - Health and loaded-place counts: http://localhost:8000/health
 
-Run commands from `backend/map/`. From the repository root, the equivalent server command is:
+Run commands from `backend/`. From the repository root, the equivalent server command is:
 
 ```sh
-backend/map/.venv/bin/uvicorn main:app --app-dir backend/map --reload
+backend/.venv/bin/uvicorn main:app --app-dir backend --reload
 ```
 
 ## Code layout
 
 ```text
-backend/map/
+backend/
 ├── main.py                 # Uvicorn entry point; exposes app and create_app
 ├── data/
 │   ├── README.md           # Dataset sources and intended preparation
 │   └── raw/                # Unchanged place dataset snapshots
-├── map_api/
+├── app/
 │   ├── application.py      # App factory, lifecycle, CORS, and error handlers
 │   ├── config.py           # Environment settings and timezone
 │   ├── catalog.py          # Local JSON loading, category mapping, and filtering
@@ -58,13 +60,13 @@ Change response contracts in `schemas.py`, domain rules in `services.py`, and SQ
 
 At startup, the app reads [`data/raw/entities.json`](data/raw/entities.json), validates
 records, maps supported food/shopping categories, filters to Madison, and caches the catalog
-in memory. It retains the six fictional demo places in `map_api/seed.py` for partner deals
+in memory. It retains the six fictional demo places in `app/seed.py` for partner deals
 and free-stop quest/check-in flows. Restart the app to reload a changed dataset.
 See the [dataset guide](data/README.md) for source details and filtering rules.
 
 The existing `uvicorn main:app` command and all API paths remain unchanged.
-For a larger backend, use `map_api.application.create_app` as the app factory, or include
-`map_router` and `merchant_router` from `map_api.routes`. When including routers directly,
+For a larger backend, use `app.application.create_app` as the app factory, or include
+`map_router` and `merchant_router` from `app.routes`. When including routers directly,
 the host app must load `MapService.catalog`, initialize the database, provide `app.state.map_service`, and register
 the error handlers shown in `application.py`.
 
@@ -175,10 +177,10 @@ Set environment variables before starting Uvicorn:
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `MAP_DB_PATH` | `backend/map/map.sqlite3` (absolute path resolved beside `main.py`) | SQLite file; its parent directory must exist |
+| `MAP_DB_PATH` | `backend/map.sqlite3` (absolute path resolved beside `main.py`) | SQLite file; its parent directory must exist |
 | `MAP_DEMO_MODE` | `true` | Set `false` for real Chicago time, `demo: null`, and disabled simulation |
 | `MAP_CORS_ORIGINS` | `http://localhost:3000,http://localhost:5173` | Comma-separated exact frontend origins |
-| `MAP_PLACES_PATH` | `backend/map/data/raw/entities.json` (resolved beside `main.py`) | Normalized Foursquare JSON array loaded at startup; override paths are relative to the working directory |
+| `MAP_PLACES_PATH` | `backend/data/raw/entities.json` (resolved beside `main.py`) | Normalized Foursquare JSON array loaded at startup; override paths are relative to the working directory |
 
 For example:
 
@@ -186,7 +188,7 @@ For example:
 MAP_CORS_ORIGINS=http://localhost:8080 uvicorn main:app --reload
 ```
 
-SQLite stores visits and created quests across restarts. Seeded places remain in `map_api/seed.py`.
+SQLite stores visits and created quests across restarts. Seeded places remain in `app/seed.py`.
 Missing, malformed, or non-array place datasets fail startup. Invalid individual rows are skipped
 and logged; inspect `/health` for loaded counts. An empty array loads only demo fixtures.
 The default quest is inserted once with the current/demo week's window. It is not refreshed
@@ -209,7 +211,7 @@ polygon area uses a campus-scale local projection. No Google Places, routing pro
 payments, XP account balances, rate limiting, or production authorization is implemented.
 The deal's `live_now` is its time-window status, not verified first-visit eligibility.
 Imported opening schedules are not evaluated; the API does not promise a place is open now.
-`/ask` and plan confirmation belong to the separate planning backend.
+`/ask` and plan confirmation will live in this backend; their implementation is pending.
 
 ## Tests
 
