@@ -6,21 +6,23 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from .config import Settings
+from .catalog import load_places
 from .database import Database
 from .errors import APIError
-from .routes import map_router, merchant_router
+from .routes import map_router, merchant_router, system_router
 from .schemas import Error
 from .services import MapService
 
 
-def create_app(db_path=None, demo_mode=None):
+def create_app(db_path=None, demo_mode=None, places_path=None):
     """Create the standalone map service. Header identities are development-only."""
-    settings = Settings.from_env(db_path, demo_mode)
+    settings = Settings.from_env(db_path, demo_mode, places_path)
     database = Database(settings.database_path)
     service = MapService(settings, database)
 
     @asynccontextmanager
     async def lifespan(app):
+        service.catalog = load_places(settings.places_path)
         database.initialize(service.now())
         yield
 
@@ -44,4 +46,5 @@ def create_app(db_path=None, demo_mode=None):
 
     app.include_router(map_router)
     app.include_router(merchant_router)
+    app.include_router(system_router)
     return app

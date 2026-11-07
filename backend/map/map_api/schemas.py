@@ -23,6 +23,14 @@ class Error(Envelope):
     message: str
 
 
+class HealthResponse(Envelope):
+    status: Literal["ok"]
+    source: Literal["fallback_seeded"]
+    places_loaded: int
+    snapshot_places_loaded: int
+    demo_places_loaded: int
+
+
 class Polygon(BaseModel):
     type: Literal["Polygon"]
     coordinates: list[list[tuple[float, float]]]
@@ -46,6 +54,7 @@ class Place(BaseModel):
     sponsored: bool
     deal: Deal | None
     est_cost_cents: int
+    cost_source: Literal["merchant", "category_table", "user"] = "category_table"
     checkin_xp: int
     walk_s: int
     community_quest_ids: list[str]

@@ -18,6 +18,7 @@ uvicorn main:app --reload --host 127.0.0.1 --port 8000
 - Interactive API docs: http://localhost:8000/docs
 - OpenAPI JSON: http://localhost:8000/openapi.json
 - Base URL: `http://localhost:8000`
+- Health and loaded-place counts: http://localhost:8000/health
 
 Run commands from `backend/map/`. From the repository root, the equivalent server command is:
 
@@ -36,6 +37,7 @@ backend/map/
 ├── map_api/
 │   ├── application.py      # App factory, lifecycle, CORS, and error handlers
 │   ├── config.py           # Environment settings and timezone
+│   ├── catalog.py          # Local JSON loading, category mapping, and filtering
 │   ├── routes.py           # Map and merchant APIRouters; HTTP inputs/outputs
 │   ├── schemas.py          # Pydantic request and response contracts
 │   ├── services.py         # Place filtering, check-in rules, quest validation
@@ -44,7 +46,8 @@ backend/map/
 │   ├── errors.py           # Domain error type
 │   └── seed.py             # Fictional campus fixtures
 ├── tests/
-│   └── test_api.py         # API and persistence regression tests
+│   ├── test_api.py         # API and persistence regression tests
+│   └── test_catalog.py     # Snapshot normalization and startup integration tests
 ├── pytest.ini
 └── requirements.txt
 ```
@@ -53,21 +56,24 @@ Routes delegate to `MapService`, which uses `Database` for persistence. The app 
 creates one configured service per application and exposes it through a FastAPI dependency.
 Change response contracts in `schemas.py`, domain rules in `services.py`, and SQL in `database.py`.
 
-The supplied place datasets are stored in [`data/raw/`](data/raw/). See the
-[dataset guide](data/README.md) for their roles and preparation steps. They are not
-connected to the API yet; endpoints still use the fictional fixtures in `map_api/seed.py`.
+At startup, the app reads [`data/raw/entities.json`](data/raw/entities.json), validates
+records, maps supported food/shopping categories, filters to Madison, and caches the catalog
+in memory. It retains the six fictional demo places in `map_api/seed.py` for partner deals
+and free-stop quest/check-in flows. Restart the app to reload a changed dataset.
+See the [dataset guide](data/README.md) for source details and filtering rules.
 
 The existing `uvicorn main:app` command and all API paths remain unchanged.
 For a larger backend, use `map_api.application.create_app` as the app factory, or include
 `map_router` and `merchant_router` from `map_api.routes`. When including routers directly,
-the host app must initialize the database, provide `app.state.map_service`, and register
+the host app must load `MapService.catalog`, initialize the database, provide `app.state.map_service`, and register
 the error handlers shown in `application.py`.
 
 ## Endpoints
 
 | Method | Path | Behavior |
 | --- | --- | --- |
-| GET | `/map/places` | Seeded places within an estimated walking radius, deals, and GeoJSON boundary |
+| GET | `/health` | Server status and counts of loaded snapshot/demo places |
+| GET | `/map/places` | Local snapshot and demo places within an estimated walking radius, deals, and GeoJSON boundary |
 | POST | `/map/checkin` | Validate free-place check-ins, award XP, and return quest progress |
 | GET | `/map/community-quests` | Active quests containing the query point or within approximately 2 km |
 | POST | `/merchant/community-quests` | Validate and persist a polygon-based quest |
@@ -80,6 +86,9 @@ Money uses integer cents. Distances use meters, durations use seconds, and
 GeoJSON coordinates use `[lng, lat]`. The explicitly named `walk_min` query uses minutes.
 All successful responses and application/validation errors include `demo`.
 Map list responses include `source: "fallback_seeded"`; show the UI's live-places-unavailable notice.
+This source value also covers the offline snapshot; it does not imply the listings are live.
+Each place includes `cost_source: "category_table"`; prices are estimates, not menu quotes.
+Show source attribution from `attributions` and each place's `attribution`.
 
 ## Frontend examples
 
@@ -114,10 +123,14 @@ const quests = await fetch(`${base}/map/community-quests`, { headers })
 Use the same `X-User-Id` for check-ins and quest reads. Omitting it selects
 `demo-user`. Separate IDs keep progress separate. Place IDs beginning `m_` are
 local seeded fixtures; inspect `partner` to determine whether a place is a partner.
+Imported places have stable `fsq:<source_id>` IDs, `attribution: "foursquare"`, and
+`partner: false`. They are not Google places and do not use the `g:` prefix.
 
 Quick manual checks:
 
 ```sh
+curl http://localhost:8000/health
+
 curl 'http://localhost:8000/map/places?walk_min=10&categories=free'
 
 curl -X POST http://localhost:8000/map/checkin \
@@ -150,7 +163,7 @@ curl -X POST http://localhost:8000/merchant/community-quests \
   At least two distinct places are required; `needed_visits` must be between two and their count.
   `ends_at` must include a timezone and be in the next 14 days.
   `purchase_required` is always false; supplying it in a creation request is rejected.
-- `places_in_zone` counts all seeded places inside the polygon, including unselected places.
+- `places_in_zone` counts all catalog places inside the polygon, including unselected places.
   There is no participation consent workflow in this scaffold.
 - Validation errors return HTTP 422 with `{ "error": "code", "message": "...", "demo": ... }`.
   Unknown check-in places return HTTP 404. Semantic check-in rejections return HTTP 200,
@@ -165,6 +178,7 @@ Set environment variables before starting Uvicorn:
 | `MAP_DB_PATH` | `backend/map/map.sqlite3` (absolute path resolved beside `main.py`) | SQLite file; its parent directory must exist |
 | `MAP_DEMO_MODE` | `true` | Set `false` for real Chicago time, `demo: null`, and disabled simulation |
 | `MAP_CORS_ORIGINS` | `http://localhost:3000,http://localhost:5173` | Comma-separated exact frontend origins |
+| `MAP_PLACES_PATH` | `backend/map/data/raw/entities.json` (resolved beside `main.py`) | Normalized Foursquare JSON array loaded at startup; override paths are relative to the working directory |
 
 For example:
 
@@ -173,6 +187,8 @@ MAP_CORS_ORIGINS=http://localhost:8080 uvicorn main:app --reload
 ```
 
 SQLite stores visits and created quests across restarts. Seeded places remain in `map_api/seed.py`.
+Missing, malformed, or non-array place datasets fail startup. Invalid individual rows are skipped
+and logged; inspect `/health` for loaded counts. An empty array loads only demo fixtures.
 The default quest is inserted once with the current/demo week's window. It is not refreshed
 after expiration. For a fresh local demo, stop the server and use a new `MAP_DB_PATH`.
 Use separate database files when switching clock modes. Frozen demo time means daily limits
@@ -184,11 +200,15 @@ This is a local integration scaffold. `X-User-Id` and `X-Merchant-Id` are spoofa
 identities, not authentication. Demo mode treats every caller as a judge account. Add verified
 user/merchant roles and per-account judge authorization before shared deployment.
 
-Listings, prices, offers, and opening assumptions are fictional fixtures. Walking times use
+Imported listings come from an offline Foursquare snapshot, not a live feed. Imported prices
+are fixed category estimates: coffee 500 cents, lunch 1400 cents, groceries 1200 cents.
+Price tiers are not converted to exact costs. Demo listings, offers, and opening assumptions
+remain fictional fixtures. Walking times use
 great-circle distance / 1.3 m/s. The boundary is a circular estimate, not a routed isochrone;
 polygon area uses a campus-scale local projection. No Google Places, routing provider,
 payments, XP account balances, rate limiting, or production authorization is implemented.
 The deal's `live_now` is its time-window status, not verified first-visit eligibility.
+Imported opening schedules are not evaluated; the API does not promise a place is open now.
 `/ask` and plan confirmation belong to the separate planning backend.
 
 ## Tests
@@ -200,4 +220,5 @@ python -m pytest -q
 
 Tests use isolated temporary SQLite databases. They cover filters, GeoJSON closure,
 validation, check-in eligibility, duplicate/concurrent XP, daily caps, simulation permissions,
-quest completion, persistence, polygon constraints, CORS, and generated OpenAPI schemas.
+quest completion, persistence, polygon constraints, CORS, generated OpenAPI schemas,
+catalog filtering/deduplication, startup failures, cached loading, and real-snapshot integration.

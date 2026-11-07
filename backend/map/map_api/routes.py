@@ -3,7 +3,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Header, Query, Request
 
 from .schemas import (CheckinRequest, CheckinResponse, CreateQuestRequest,
-                      CreateQuestResponse, PlacesResponse, QuestsResponse)
+                      CreateQuestResponse, HealthResponse, PlacesResponse, QuestsResponse)
 from .seed import CAMPUS
 from .services import MapService
 
@@ -19,6 +19,15 @@ User = Annotated[str, Header(alias="X-User-Id", min_length=1, max_length=100)]
 
 map_router = APIRouter(prefix="/map", tags=["Map"])
 merchant_router = APIRouter(prefix="/merchant", tags=["Merchant"])
+system_router = APIRouter(tags=["System"])
+
+
+@system_router.get("/health", response_model=HealthResponse)
+def health(service: Service):
+    snapshot_count = sum(p["attribution"] == "foursquare" for p in service.catalog)
+    return dict(status="ok", source="fallback_seeded", demo=service.demo(),
+                places_loaded=len(service.catalog), snapshot_places_loaded=snapshot_count,
+                demo_places_loaded=len(service.catalog) - snapshot_count)
 
 
 @map_router.get("/places", response_model=PlacesResponse)

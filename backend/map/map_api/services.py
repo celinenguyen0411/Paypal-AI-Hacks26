@@ -10,7 +10,7 @@ from .database import Database
 from .errors import APIError
 from .geometry import distance, walking_zone
 from .schemas import CheckinRequest, CreateQuestRequest
-from .seed import CAMPUS, FROZEN_AT, PLACES
+from .seed import CAMPUS, FROZEN_AT
 
 WALK_SPEED_M_S = 1.3
 CHECKIN_RADIUS_M = 75
@@ -24,6 +24,7 @@ class MapService:
     def __init__(self, settings: Settings, database: Database):
         self.settings = settings
         self.database = database
+        self.catalog = []
 
     def now(self):
         return datetime.fromisoformat(FROZEN_AT) if self.settings.demo_mode else datetime.now(TZ)
@@ -41,7 +42,7 @@ class MapService:
         with self.database.connect() as connection:
             quests = self.database.active_quests(connection, self.now())
         result = []
-        for seed in PLACES:
+        for seed in self.catalog:
             meters = distance(origin, seed["location"])
             if seed["category"] not in selected or meters > radius:
                 continue
@@ -53,7 +54,8 @@ class MapService:
                                     and 14 <= local.hour < 17)
             result.append(item)
         return dict(demo=self.demo(), source="fallback_seeded", places=sorted(result, key=lambda p: p["walk_s"]),
-                    isochrone_geojson=walking_zone(lat, lng, radius), attributions=[])
+                    isochrone_geojson=walking_zone(lat, lng, radius),
+                    attributions=sorted({p["attribution"] for p in result if p["attribution"]}))
 
     def community_quests(self, lat, lng, x_user_id):
         result = []
@@ -69,9 +71,9 @@ class MapService:
         return dict(demo=self.demo(), source="fallback_seeded", quests=result)
 
     def checkin(self, body: CheckinRequest, x_user_id):
-        place = next((p for p in PLACES if p["place_id"] == body.place_id), None)
+        place = next((p for p in self.catalog if p["place_id"] == body.place_id), None)
         if place is None:
-            raise APIError("place_not_found", "This place is not in the seeded map.", 404)
+            raise APIError("place_not_found", "This place is not in the local map catalog.", 404)
         meters = round(distance(body.location.model_dump(), place["location"]))
         reason = None
         if body.simulated and not self.settings.demo_mode:
@@ -98,7 +100,7 @@ class MapService:
                     league_xp_awarded=xp, reason=reason, community_progress=updates)
 
     def create_quest(self, body: CreateQuestRequest, x_merchant_id):
-        merchant = next((p for p in PLACES if p["place_id"] == x_merchant_id and p["partner"]), None)
+        merchant = next((p for p in self.catalog if p["place_id"] == x_merchant_id and p["partner"]), None)
         if merchant is None:
             raise APIError("invalid_merchant", "Choose a seeded partner merchant.")
         rings = body.zone_geojson.coordinates
@@ -119,7 +121,7 @@ class MapService:
         ids = set(body.place_ids)
         if len(ids) != len(body.place_ids) or not 2 <= body.needed_visits <= len(ids):
             raise APIError("invalid_places", "Use distinct places and a visit goal between 2 and the place count.")
-        inside = {p["place_id"] for p in PLACES if polygon.covers(Point(p["location"]["lng"], p["location"]["lat"]))}
+        inside = {p["place_id"] for p in self.catalog if polygon.covers(Point(p["location"]["lng"], p["location"]["lat"]))}
         if not ids <= inside:
             raise APIError("invalid_places", "Every participating place must exist and lie inside the zone.")
         if not body.title.strip():
