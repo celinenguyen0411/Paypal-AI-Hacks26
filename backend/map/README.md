@@ -30,6 +30,9 @@ backend/map/.venv/bin/uvicorn main:app --app-dir backend/map --reload
 ```text
 backend/map/
 ├── main.py                 # Uvicorn entry point; exposes app and create_app
+├── data/
+│   ├── README.md           # Dataset sources and intended preparation
+│   └── raw/                # Unchanged place dataset snapshots
 ├── map_api/
 │   ├── application.py      # App factory, lifecycle, CORS, and error handlers
 │   ├── config.py           # Environment settings and timezone
@@ -49,6 +52,10 @@ backend/map/
 Routes delegate to `MapService`, which uses `Database` for persistence. The app factory
 creates one configured service per application and exposes it through a FastAPI dependency.
 Change response contracts in `schemas.py`, domain rules in `services.py`, and SQL in `database.py`.
+
+The supplied place datasets are stored in [`data/raw/`](data/raw/). See the
+[dataset guide](data/README.md) for their roles and preparation steps. They are not
+connected to the API yet; endpoints still use the fictional fixtures in `map_api/seed.py`.
 
 The existing `uvicorn main:app` command and all API paths remain unchanged.
 For a larger backend, use `map_api.application.create_app` as the app factory, or include
