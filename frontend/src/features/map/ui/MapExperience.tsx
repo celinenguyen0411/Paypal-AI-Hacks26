@@ -147,7 +147,12 @@ export function MapExperience() {
           {tab === "route" && plan && <RouteLayer plan={plan} start={planner.start} walkingLine={walkingLine} />}
           {tab === "nearby" && <NearbyLayer nearby={nearby} />}
           {tab === "quests" && (
-            <QuestsLayer quests={quests.quests} catalog={quests.catalog} onSelect={selectPlace} />
+            <QuestsLayer
+              quests={quests.quests}
+              catalog={quests.catalog}
+              onSelect={selectPlace}
+              interactive={!studioOpen}
+            />
           )}
           {tab !== "route" && selected && (
             <Popup

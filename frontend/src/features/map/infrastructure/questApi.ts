@@ -60,11 +60,12 @@ export function createQuestApi(userId: string) {
 
   return {
     health: () => request<{ demo: DemoInfo | null }>("/health"),
-    ask: (message: string, conversationId: string | null, location: LatLng | null) =>
+    ask: (message: string, conversationId: string | null, location: LatLng | null, planId: string | null) =>
       post<AskResponse>("/ask", {
         message,
         location,
         ...(conversationId ? { conversation_id: conversationId } : {}),
+        ...(planId ? { plan_id: planId } : {}),
       }),
     swap: (planId: string, offer: SwapOffer) =>
       post<SwapResponse>(`/ask/plans/${planId}/swap`, {
@@ -75,6 +76,7 @@ export function createQuestApi(userId: string) {
     places: ({ center, walkMin, categories }: PlacesQuery) =>
       request<PlacesResponse>(
         `/map/places?lat=${center.lat}&lng=${center.lng}&walk_min=${walkMin}&categories=${categories.join(",")}`,
+        { headers: { "X-User-Id": userId } },
       ),
     checkin: ({ placeId, location, accuracyM, simulated }: CheckinInput) =>
       post<CheckinResponse>("/map/checkin", {
@@ -89,7 +91,7 @@ export function createQuestApi(userId: string) {
       }),
     createQuest: (quest: NewQuest, merchantId: string) =>
       post<{ id: string; places_in_zone: number }>("/merchant/community-quests", quest, {
-        "Content-Type": "application/json",
+        ...jsonHeaders,
         "X-Merchant-Id": merchantId,
       }),
   };
