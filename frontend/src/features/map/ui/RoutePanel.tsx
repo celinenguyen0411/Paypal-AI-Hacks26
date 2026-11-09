@@ -3,6 +3,7 @@ import type { RoutePlanner } from "../application/useRoutePlanner";
 import { budgetBar, formatCents } from "../domain/money";
 import { formatClock, minutesLabel } from "../domain/route";
 import type { Leg, Plan, Stop, SwapOffer } from "../domain/types";
+import { startRouteXpLabel } from "../domain/xp";
 
 const WEDNESDAY_PROMPT = "Wed 12:30: lunch, coffee and a few groceries before my 2pm class. $30 max.";
 
@@ -87,7 +88,7 @@ function PlanDetails({ plan, planner }: { plan: Plan; planner: RoutePlanner }) {
         Why this order?
       </button>
       {showWhy && <WhySheet plan={plan} />}
-      <ConfirmArea planner={planner} />
+      <ConfirmArea plan={plan} planner={planner} />
       <button type="button" className="link" onClick={planner.startOver}>
         Start over
       </button>
@@ -207,7 +208,7 @@ function WhySheet({ plan }: { plan: Plan }) {
   );
 }
 
-function ConfirmArea({ planner }: { planner: RoutePlanner }) {
+function ConfirmArea({ plan, planner }: { plan: Plan; planner: RoutePlanner }) {
   if (planner.confirmedXp !== null) {
     return (
       <p className="card done">
@@ -217,9 +218,13 @@ function ConfirmArea({ planner }: { planner: RoutePlanner }) {
       </p>
     );
   }
+  const xpLabel = startRouteXpLabel(plan.xp_preview);
   return (
-    <button type="button" className="btn" disabled={planner.busy !== null} onClick={() => void planner.confirm()}>
-      {planner.busy === "confirming" ? "Saving…" : "Start this route"}
-    </button>
+    <>
+      {xpLabel && <p className="sub xpline">{xpLabel}</p>}
+      <button type="button" className="btn" disabled={planner.busy !== null} onClick={() => void planner.confirm()}>
+        {planner.busy === "confirming" ? "Saving…" : "Start this route"}
+      </button>
+    </>
   );
 }
