@@ -34,3 +34,24 @@ export function zoneChecks(zone: Polygon, participating: Located[]): ZoneCheck[]
     },
   ];
 }
+
+const MAX_END_DAYS = 13;
+const SUGGESTED_END_DAYS = 7;
+const DAY_MS = 86_400_000;
+
+function addDays(day: string, days: number): string {
+  return new Date(Date.parse(`${day}T00:00:00Z`) + days * DAY_MS).toISOString().slice(0, 10);
+}
+
+export function endDateRange(clockIso: string) {
+  const today = clockIso.slice(0, 10);
+  return {
+    min: addDays(today, 1),
+    max: addDays(today, MAX_END_DAYS),
+    suggested: addDays(today, SUGGESTED_END_DAYS),
+  };
+}
+
+export function endOfDay(day: string, clockIso: string): string {
+  return `${day}T23:59:00${clockIso.slice(-6)}`;
+}
