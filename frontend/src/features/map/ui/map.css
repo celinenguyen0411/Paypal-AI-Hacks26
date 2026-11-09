@@ -323,6 +323,11 @@ textarea {
   font-weight: 600;
 }
 
+.xpline {
+  color: var(--ok);
+  font-weight: 600;
+}
+
 ol.stops {
   list-style: none;
   margin: 0;
