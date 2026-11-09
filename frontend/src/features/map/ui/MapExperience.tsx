@@ -1,18 +1,23 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Popup, type MapMouseEvent, type MapRef } from "react-map-gl/mapbox";
 import type { GeoJSONSource } from "mapbox-gl";
 import { useCheckin } from "../application/useCheckin";
 import { useNearby } from "../application/useNearby";
+import { useQuests } from "../application/useQuests";
 import { useRoutePlanner } from "../application/useRoutePlanner";
 import { useSession } from "../application/useSession";
 import { useWalkingLine } from "../application/useWalkingLine";
+import { useZoneDrawing } from "../application/useZoneDrawing";
 import { boundsOf, formatClock, type Coordinate } from "../domain/route";
 import type { LatLng, Place } from "../domain/types";
 import { MAPBOX_TOKEN } from "../infrastructure/mapboxRouting";
+import { MerchantStudio } from "./MerchantStudio";
 import { CLUSTER_LAYER, CLUSTER_SOURCE, NearbyLayer, PIN_LAYERS } from "./NearbyLayer";
 import { NearbyPanel } from "./NearbyPanel";
 import { PlaceDetails } from "./PlaceDetails";
 import { QuestMap } from "./QuestMap";
+import { QuestsLayer } from "./QuestsLayer";
+import { QuestsPanel } from "./QuestsPanel";
 import { RouteLayer } from "./RouteLayer";
 import { RoutePanel } from "./RoutePanel";
 import "./map.css";
@@ -22,6 +27,7 @@ const FIT_PADDING = 70;
 const TABS = [
   { id: "route", label: "Route" },
   { id: "nearby", label: "Nearby" },
+  { id: "quests", label: "Quests" },
 ] as const;
 
 type TabId = (typeof TABS)[number]["id"];
@@ -33,11 +39,13 @@ export function MapExperience() {
   const [selected, setSelected] = useState<Place | null>(null);
   const planner = useRoutePlanner(api, demo?.location ?? null);
   const nearby = useNearby(api, center);
-  const noRefresh = useCallback(() => undefined, []);
-  const checkin = useCheckin(api, demo, noRefresh);
+  const quests = useQuests(api, center);
+  const checkin = useCheckin(api, demo, quests.refresh);
   const plan = planner.current?.plan ?? null;
   const walkingLine = useWalkingLine(plan);
   const mapRef = useRef<MapRef>(null);
+  const [studioOpen, setStudioOpen] = useState(false);
+  const drawing = useZoneDrawing(mapRef, tab === "quests" && studioOpen);
 
   useEffect(() => {
     if (!plan || tab !== "route") return;
@@ -74,6 +82,7 @@ export function MapExperience() {
   const reset = () => {
     planner.startOver();
     setSelected(null);
+    setStudioOpen(false);
     checkin.clearNotice();
     resetDemo();
   };
@@ -100,6 +109,23 @@ export function MapExperience() {
         {tab === "nearby" && (
           <NearbyPanel nearby={nearby} selectedId={selected?.place_id ?? null} onSelect={selectPlace} />
         )}
+        {tab === "quests" && !studioOpen && (
+          <QuestsPanel quests={quests} checkin={checkin} onOpenStudio={() => setStudioOpen(true)} />
+        )}
+        {tab === "quests" && studioOpen && (
+          <MerchantStudio
+            api={api}
+            catalog={quests.catalog}
+            clockIso={demo?.frozen_at ?? new Date().toISOString().replace("Z", "+00:00")}
+            zone={drawing.zone}
+            onRedraw={drawing.redraw}
+            onCreated={() => {
+              void quests.refresh();
+              setStudioOpen(false);
+            }}
+            onClose={() => setStudioOpen(false)}
+          />
+        )}
       </aside>
       <main className="map-area">
         <QuestMap
@@ -110,7 +136,10 @@ export function MapExperience() {
         >
           {tab === "route" && plan && <RouteLayer plan={plan} start={planner.start} walkingLine={walkingLine} />}
           {tab === "nearby" && <NearbyLayer nearby={nearby} />}
-          {tab === "nearby" && selected && (
+          {tab === "quests" && (
+            <QuestsLayer quests={quests.quests} catalog={quests.catalog} onSelect={selectPlace} />
+          )}
+          {tab !== "route" && selected && (
             <Popup
               latitude={selected.location.lat}
               longitude={selected.location.lng}
