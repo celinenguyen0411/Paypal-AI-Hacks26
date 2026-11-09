@@ -110,6 +110,13 @@ export interface HiddenPlace {
   label: string;
 }
 
+export interface XpPreview {
+  quest: string;
+  xp: number;
+  checkable: boolean;
+  when: string;
+}
+
 export interface Plan {
   plan_id: string;
   source: string;
@@ -117,6 +124,7 @@ export interface Plan {
   legs: Leg[];
   route_geojson: Feature<LineString>;
   totals: Totals;
+  xp_preview: XpPreview[];
   swaps: SwapOffer[];
   hidden: HiddenPlace[];
   ranking: string;
