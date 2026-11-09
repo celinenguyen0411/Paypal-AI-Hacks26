@@ -16,7 +16,9 @@ def deal_opens_at(deal, moment):
     return opens if local.weekday() in deal["days"] and local < opens else None
 
 
-def deal_cashback(deal, cost_cents):
+def deal_cashback(deal, listed_cents, paid_cents):
     if deal["flat_cents"] is not None:
-        return deal["flat_cents"]
-    return min(round(cost_cents * deal["pct"] / 100), deal["cap_cents"])
+        earned = deal["flat_cents"]
+    else:
+        earned = min(round(min(listed_cents, paid_cents) * deal["pct"] / 100), deal["cap_cents"])
+    return min(earned, paid_cents)

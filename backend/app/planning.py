@@ -5,12 +5,12 @@ from .ask_schemas import AskResponse, ExtractedIntent, SwapResponse
 from .errors import APIError
 from .config import TZ
 from .route_solver import DWELL_S, NoPlacesFit, Trip, solve
-from .seed import CAMPUS
+from .seed import CAMPUS, WEDNESDAY_INTENT, WEDNESDAY_PROMPT
 
 CASHBACK_CLEARS_DAYS = 7
-RANKING = ("Places with a known price come first: the cheapest after cashback within a 2-minute detour. "
-           "Places with only an estimated price fill a need when no known-price place fits. "
-           "Round trip to the start; groceries last. Sponsors receive no ranking boost.")
+RANKING = ("Only Quest partners have confirmed prices today, so they are picked first: the cheapest after "
+           "cashback within a 2-minute detour. Other places have estimated prices and fill in when no partner "
+           "route fits. A Sponsored label adds nothing beyond that. Round trip to the start; groceries last.")
 
 
 class PlanningService:
@@ -25,7 +25,7 @@ class PlanningService:
             previous = self.database.conversation(body.conversation_id, user)
             if previous is None:
                 raise APIError("conversation_not_found", "Conversation not found for this user.", 404)
-        extracted = self.ai.extract(body.message, previous, self.maps.now())
+        extracted = self.extract_intent(body.message, previous)
         # Validate even injected/test clients so planning never trusts provider-specific objects.
         try:
             extracted = ExtractedIntent.model_validate(extracted)
@@ -39,7 +39,7 @@ class PlanningService:
                       diet=extracted.diet, party_size=extracted.party_size,
                       max_walk_min=extracted.max_walk_min, deadline=extracted.deadline, start=start)
         reason = self.clarification(extracted)
-        plan, budget_check, stop_needs = None, None, []
+        plan, budget_check, stop_needs, forced = None, None, [], {}
         if reason:
             kind, reply = "clarify", reason
         elif extracted.kind == "answer":
@@ -54,7 +54,8 @@ class PlanningService:
                          f"your fictional ${safe:.2f} safe-to-spend balance.")
         else:
             kind = "route_plan"
-            plan, stop_needs = self.build_plan(extracted, start)
+            forced = self.kept_swaps(body.plan_id, extracted, user)
+            (plan, stop_needs), forced = self.plan_keeping_swaps(extracted, start, forced)
             budget_check = self.budget_check(plan["totals"]["cost_cents"])
             if budget_check and not budget_check["ok"]:
                 raise APIError("over_safe_to_spend", "This plan exceeds the demo safe-to-spend balance.")
@@ -62,7 +63,7 @@ class PlanningService:
             status = "over" if totals["over_budget"] else "within"
             fallback = (f"Estimated cost: ${totals['cost_cents'] / 100:.2f}, {status} your budget. "
                         f"Estimated return: {self.clock_label(totals['return_at'])}. Prices and walking times are estimates.")
-            reply = self.ai.explain(plan, fallback)
+            reply = self.ai.explain(self.narration_facts(plan), fallback)
         response = AskResponse.model_validate(dict(
             demo=self.maps.demo(), kind=kind, conversation_id=conversation_id, reply=reply,
             intent=intent, budget_check=budget_check, plan=plan,
@@ -70,9 +71,57 @@ class PlanningService:
         state = {"intent": response["intent"], "plan": response["plan"],
                  "exclude_place_ids": extracted.exclude_place_ids}
         context = dict(conversation_id=conversation_id, intent=extracted.model_dump(mode="json"),
-                       start=start, forced={}, stop_needs=stop_needs)
+                       start=start, forced=forced, stop_needs=stop_needs)
         self.database.save_exchange(conversation_id, user, state, response["plan"], context)
         return response
+
+    def extract_intent(self, message, previous):
+        try:
+            return self.ai.extract(message, self.ai_context(previous), self.maps.now())
+        except APIError as failure:
+            if self.maps.settings.demo_mode and message == WEDNESDAY_PROMPT and failure.status in (429, 503):
+                return ExtractedIntent.model_validate(WEDNESDAY_INTENT)
+            raise
+
+    @staticmethod
+    def ai_context(previous):
+        if not previous or not previous.get("plan"):
+            return previous
+        stops = [dict(place_id=stop["place_id"], name=stop["name"], category=stop["category"])
+                 for stop in previous["plan"]["stops"]]
+        return dict(previous, plan=dict(stops=stops))
+
+    def kept_swaps(self, plan_id, intent, user):
+        if plan_id is None:
+            return {}
+        saved = self.database.plan_with_context(plan_id, user)
+        if saved is None:
+            raise APIError("plan_not_found", "Plan not found for this user.", 404)
+        context = saved[1]
+        kept = {context["intent"]["needs"][int(index)]["category"]: place_id
+                for index, place_id in context["forced"].items()}
+        return {index: kept[need.category] for index, need in enumerate(intent.needs)
+                if need.category in kept and kept[need.category] not in intent.exclude_place_ids}
+
+    def plan_keeping_swaps(self, intent, start, forced):
+        try:
+            return self.build_plan(intent, start, forced), forced
+        except APIError as failure:
+            if not forced or failure.code != "no_places_fit":
+                raise
+            return self.build_plan(intent, start), {}
+
+    def narration_facts(self, plan):
+        totals = plan["totals"]
+        left = totals["budget_left_cents"]
+        budget = f"{self.dollars(-left)} over budget" if totals["over_budget"] else f"{self.dollars(left)} left"
+        return dict(stops=[dict(name=stop["name"], price=self.dollars(stop["est_cost_cents"])) for stop in plan["stops"]],
+                    total=self.dollars(totals["cost_cents"]), budget=budget,
+                    back_by=self.clock_label(totals["return_at"]))
+
+    @staticmethod
+    def dollars(cents):
+        return f"${cents / 100:.2f}"
 
     def swap(self, plan_id, body, user):
         saved = self.database.plan_with_context(plan_id, user)
