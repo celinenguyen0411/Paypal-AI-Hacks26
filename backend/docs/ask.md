@@ -72,8 +72,12 @@ Money is integer cents. Stops and timing use the existing catalog estimates.
 start for a follow-up. An explicit location changes the start. The API does not geocode
 landmarks mentioned in messages.
 
-The planner searches up to five low-cost nearby candidates per need, tries stop ordering,
-keeps groceries last, and includes the walk back to the start. `max_walk_min` limits total
+For each need, the planner considers places with a known merchant price and uses estimated
+snapshot prices only when no known-price place fits. It starts from the quickest route, takes
+the cheapest pick after cashback within a 2-minute detour, keeps groceries last, may wait up to
+10 minutes for a deal to open, and includes the walk back to the start. Cheaper places 2 to 5
+minutes off the route come back in `plan.swaps`; partners left out for a deal or distance
+reason come back in `plan.hidden`. The budget counts what you pay today, not cashback. `max_walk_min` limits total
 round-trip walking time; `duration_s` also includes stop time: lunch 20 minutes, coffee
 5 minutes, groceries 10 minutes, free stop 10 minutes. A deadline applies to returning
 to the start. These conventions are specific to this initial planner.
@@ -133,7 +137,17 @@ Cross-user conversation and plan lookups return HTTP 404. These headers remain s
 development identities; this is not production authentication.
 
 The body is optional. `{ "swaps_applied": [] }` is accepted. Nonempty swap lists return
-`swaps_not_supported`; use a chat follow-up to create the revised plan first.
+`swaps_not_supported`; apply swaps with the swap endpoint first.
+
+## Apply a swap
+
+```sh
+curl -X POST http://localhost:8000/ask/plans/REPLACE_WITH_PLAN_ID/swap \n  -H 'Content-Type: application/json' -H 'X-User-Id: linh' \n  -d '{"replace_order":2,"with_place_id":"m_inkoat"}'
+```
+
+The response is `{ "plan": {...}, "budget_check": {...}, "demo": {...} }`. It makes no AI call and
+returns a new `plan_id`; the earlier plan stays available so the UI can undo. Only swaps listed
+in that plan's `swaps` are accepted.
 
 ## Errors and AI behavior
 
@@ -144,7 +158,8 @@ Errors use `{ "error": "code", "message": "...", "demo": ... }`.
 | 422 | `invalid_request` | Blank/oversized message, invalid coordinates, or invalid body |
 | 422 | `no_places_fit` | No candidate or round trip fits the requested constraints |
 | 422 | `over_safe_to_spend` | Plan exceeds the fictional demo balance |
-| 422 | `swaps_not_supported` | Swap confirmation requested without a supported offer |
+| 422 | `swaps_not_supported` | Swap list sent to confirm instead of the swap endpoint |
+| 422 | `swap_not_offered` | The requested swap is not in that plan's `swaps` |
 | 404 | `conversation_not_found` / `plan_not_found` | Missing record or different user |
 | 429 | `rate_limited` | Groq quota/rate limit response |
 | 503 | `llm_unavailable` | Missing/invalid key, timeout, provider error, refusal, or unusable extraction |
@@ -159,9 +174,8 @@ the entire catalog is not sent. Requests use stateless Chat Completions; convers
 
 - No live banking, merchant payments, opening-hour checks, or verified dietary filtering.
 - Route lines and travel times are estimates; they do not follow streets or account for barriers.
-- Cashback is zero, `pay_via` is `as_usual`, and `swaps`/`hidden` arrays are empty.
-- Ranking is a bounded candidate search, not a guarantee of the global optimum or the full
-  detour/cashback ranking described in the original contract. Sponsors get no ranking boost.
+- Cashback comes from fictional seeded deals. `pay_via: "quest"` is a label; no payment is taken.
+- Ranking is a bounded candidate search, not a guarantee of the global optimum. Sponsors get no ranking boost.
 - Planning XP is persisted. End-of-day budget verification, reward issuance, and balances are deferred.
 - User coordinates and conversational intent are user-provided; no landmark geocoder or destination lookup exists.
 

@@ -102,9 +102,10 @@ the error handlers shown in `application.py`.
 | --- | --- | --- |
 | GET | `/health` | Server status and counts of loaded snapshot/demo places |
 | POST | `/ask` | Extract intent and return a plan, affordability answer, or clarification |
+| POST | `/ask/plans/{plan_id}/swap` | Apply an offered swap and return a new plan, without an AI call |
 | POST | `/ask/plans/{plan_id}/confirm` | Save confirmation and award planning XP once daily |
 | GET | `/map/places` | Local snapshot and demo places within an estimated walking radius, deals, and GeoJSON boundary |
-| POST | `/map/checkin` | Validate free-place check-ins, award XP, and return quest progress |
+| POST | `/map/checkin` | Validate free-place and live-quest check-ins, award XP, and return quest progress |
 | GET | `/map/community-quests` | Active quests containing the query point or within approximately 2 km |
 | POST | `/merchant/community-quests` | Validate and persist a polygon-based quest |
 
@@ -117,7 +118,7 @@ GeoJSON coordinates use `[lng, lat]`. The explicitly named `walk_min` query uses
 All successful responses and application/validation errors include `demo`.
 Map list responses include `source: "fallback_seeded"`; show the UI's live-places-unavailable notice.
 This source value also covers the offline snapshot; it does not imply the listings are live.
-Each place includes `cost_source: "category_table"`; prices are estimates, not menu quotes.
+Each place includes `cost_source`: `"merchant"` for seeded prices, `"category_table"` for snapshot estimates, which are not menu quotes.
 Show source attribution from `attributions` and each place's `attribution`.
 
 ## Frontend examples
@@ -183,8 +184,9 @@ curl -X POST http://localhost:8000/merchant/community-quests \
 - A valid free-stop check-in requires distance at most 75 m and reported accuracy at most 50 m.
   Each free place awards 20 XP, once per user per Chicago calendar day, up to 100 check-in XP/day.
   League XP mirrors awarded check-in XP. Repeated/concurrent requests cannot award duplicate XP.
-- Both seeded free places are treated as open 24 hours. Paid places return
-  `paid_stop_uses_paypal`; no payment flow is implemented.
+- Check-ins are accepted from 7am to 9pm Chicago time, otherwise `closed_hours`. Simulation does not bypass this.
+- A paid place inside a live quest counts toward that quest with 0 XP, under the same distance and accuracy checks.
+  Any other paid place returns `paid_stop_uses_paypal`; no payment flow is implemented.
 - Quest progress counts distinct participating places visited during the quest's active period.
   Visit both `m_librarymall` and `m_lakeshore` to complete the seeded quest without purchases.
   Quest badges and the 40 XP reward are preview metadata; completion reward issuance is deferred.
@@ -195,6 +197,7 @@ curl -X POST http://localhost:8000/merchant/community-quests \
   `purchase_required` is always false; supplying it in a creation request is rejected.
 - `places_in_zone` counts all catalog places inside the polygon, including unselected places.
   There is no participation consent workflow in this scaffold.
+- A merchant's new quest replaces its previous live quest. The seeded quest is never replaced.
 - Validation errors return HTTP 422 with `{ "error": "code", "message": "...", "demo": ... }`.
   Unknown check-in places return HTTP 404. Semantic check-in rejections return HTTP 200,
   `ok: false`, zero XP, and a `reason` from the contract.
@@ -236,7 +239,7 @@ user/merchant roles and per-account judge authorization before shared deployment
 
 Imported listings come from an offline Foursquare snapshot, not a live feed. Imported prices
 are fixed category estimates: coffee 500 cents, lunch 1400 cents, groceries 1200 cents.
-Price tiers are not converted to exact costs. Demo listings, offers, and opening assumptions
+Price tiers are not converted to exact costs. Demo listings, prices, and offers
 remain fictional fixtures. Walking times use
 great-circle distance / 1.3 m/s. The boundary is a circular estimate, not a routed isochrone;
 polygon area uses a campus-scale local projection. No Google Places, routing provider,

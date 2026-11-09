@@ -75,12 +75,14 @@ class Stop(BaseModel):
     cost_source: Literal["merchant", "category_table", "user"]
     cashback_cents: int = 0
     deal_id: str | None = None
-    pay_via: Literal["as_usual"] = "as_usual"
+    pay_via: Literal["quest", "as_usual"] = "as_usual"
     checkin_xp: int
     arrive_at: datetime
     wait_s: int = 0
     dwell_s: int
     deal_live_at_arrival: bool = False
+    cashback_to_goal: bool = False
+    cashback_clears_at: datetime | None = None
     why: list[str]
     attribution: str | None
 
@@ -111,6 +113,27 @@ class XPPreview(BaseModel):
     verify: str | None = None
 
 
+class SwapOffer(BaseModel):
+    replace_order: int
+    with_place_id: str
+    name: str
+    partner: bool
+    sponsored: bool
+    est_cost_cents: int
+    cashback_cents: int
+    pay_less_today_cents: int
+    saves_after_cashback_cents: int
+    extra_walk_s: int
+    fixes_over_budget: bool
+
+
+class HiddenPlace(BaseModel):
+    place_id: str
+    name: str
+    reason: Literal["deal_not_today", "deal_window_misses_deadline", "too_far"]
+    label: str
+
+
 class Plan(BaseModel):
     plan_id: str
     source: Literal["fallback_seeded"] = "fallback_seeded"
@@ -120,8 +143,8 @@ class Plan(BaseModel):
     route_geojson: dict
     totals: Totals
     xp_preview: list[XPPreview]
-    swaps: list[dict] = Field(default_factory=list)
-    hidden: list[dict] = Field(default_factory=list)
+    swaps: list[SwapOffer] = Field(default_factory=list)
+    hidden: list[HiddenPlace] = Field(default_factory=list)
     ranking: str
 
 
@@ -143,6 +166,17 @@ class ConfirmResponse(Envelope):
     plan: Plan
     xp_awarded: int
     league_xp_awarded: int
+
+
+class SwapRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    replace_order: int = Field(ge=1)
+    with_place_id: str = Field(min_length=1)
+
+
+class SwapResponse(Envelope):
+    plan: Plan
+    budget_check: BudgetCheck | None
 
 
 class PlanReply(BaseModel):

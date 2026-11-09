@@ -1,5 +1,7 @@
 import math
 
+WALK_SPEED_M_S = 1.3
+
 
 def distance(a, b):
     """Return great-circle meters between {lat, lng} points."""
