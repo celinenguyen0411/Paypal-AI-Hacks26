@@ -73,7 +73,8 @@ start for a follow-up. An explicit location changes the start. The API does not 
 landmarks mentioned in messages.
 
 For each need, the planner considers places with a known merchant price and uses estimated
-snapshot prices only when no known-price place fits. It starts from the quickest route, takes
+snapshot prices only when no route with known-price places fits. Only Quest partners and free
+stops have known prices today, so partners are picked first. It starts from the quickest route, takes
 the cheapest pick after cashback within a 2-minute detour, keeps groceries last, may wait up to
 10 minutes for a deal to open, and includes the walk back to the start. Cheaper places 2 to 5
 minutes off the route come back in `plan.swaps`; partners left out for a deal or distance
@@ -102,7 +103,8 @@ curl -X POST http://localhost:8000/ask \
 
 The model receives the previous validated intent and plan and returns a complete updated
 intent. A swap excludes the previous stop from selection. Each new computed plan gets a
-new `plan_id`; previously issued plans remain available for confirmation. Conversation
+new `plan_id`; previously issued plans remain available for confirmation. Send the `plan_id` currently on
+screen with a follow-up to keep any swap applied to it, unless the follow-up excludes that stop. Conversation
 state and plans persist in SQLite across restarts. Use a fresh conversation ID by omitting
 the field when starting an unrelated outing. Follow-ups depend on correct model extraction;
 the planner validates the resulting values and recomputes the plan.
@@ -162,12 +164,13 @@ Errors use `{ "error": "code", "message": "...", "demo": ... }`.
 | 422 | `swap_not_offered` | The requested swap is not in that plan's `swaps` |
 | 404 | `conversation_not_found` / `plan_not_found` | Missing record or different user |
 | 429 | `rate_limited` | Groq quota/rate limit response |
+| 429 | `too_many_requests` | More than 10 `/ask` requests per minute from one address |
 | 503 | `llm_unavailable` | Missing/invalid key, timeout, provider error, refusal, or unusable extraction |
 
 A route request normally makes two model calls: extraction and explanation. Each has the
 configured timeout and no automatic retries. Answers/clarifications use one call. If the
-explanation fails, the computed plan is returned with a deterministic summary. No extraction
-fallback guesses the user's intent. The prompt and previous intent/plan are sent to Groq;
+explanation fails, the computed plan is returned with a deterministic summary. Extraction does not guess
+intent. The one exception is demo mode: if Groq refuses the exact Wednesday demo prompt, its fixed intent is used. The prompt and previous intent/plan are sent to Groq;
 the entire catalog is not sent. Requests use stateless Chat Completions; conversation history is stored locally.
 
 ## Initial version limits
@@ -175,7 +178,7 @@ the entire catalog is not sent. Requests use stateless Chat Completions; convers
 - No live banking, merchant payments, opening-hour checks, or verified dietary filtering.
 - Route lines and travel times are estimates; they do not follow streets or account for barriers.
 - Cashback comes from fictional seeded deals. `pay_via: "quest"` is a label; no payment is taken.
-- Ranking is a bounded candidate search, not a guarantee of the global optimum. Sponsors get no ranking boost.
+- Ranking is a bounded candidate search, not a guarantee of the global optimum. A Sponsored label adds no boost beyond a partner's known price.
 - Planning XP is persisted. End-of-day budget verification, reward issuance, and balances are deferred.
 - User coordinates and conversational intent are user-provided; no landmark geocoder or destination lookup exists.
 

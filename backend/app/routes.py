@@ -2,6 +2,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, Query, Request
 
+from .rate_limit import limit_quest_creation
 from .schemas import (CheckinRequest, CheckinResponse, CreateQuestRequest,
                       CreateQuestResponse, HealthResponse, PlacesResponse, QuestsResponse)
 from .seed import CAMPUS
@@ -33,8 +34,8 @@ def health(service: Service):
 @map_router.get("/places", response_model=PlacesResponse)
 def places(service: Service, lat: Latitude = CAMPUS["lat"], lng: Longitude = CAMPUS["lng"],
            walk_min: Annotated[int, Query(json_schema_extra={"enum": [5, 10, 15]})] = 10,
-           categories: str = "coffee,lunch,groceries,free"):
-    return service.places(lat, lng, walk_min, categories)
+           categories: str = "coffee,lunch,groceries,free", x_user_id: User = "demo-user"):
+    return service.places(lat, lng, walk_min, categories, x_user_id)
 
 
 @map_router.get("/community-quests", response_model=QuestsResponse)
@@ -48,7 +49,9 @@ def checkin(body: CheckinRequest, service: Service, x_user_id: User = "demo-user
     return service.checkin(body, x_user_id)
 
 
-@merchant_router.post("/community-quests", status_code=201, response_model=CreateQuestResponse)
+@merchant_router.post("/community-quests", status_code=201, response_model=CreateQuestResponse,
+                      dependencies=[Depends(limit_quest_creation)])
 def create_quest(body: CreateQuestRequest, service: Service,
-                 x_merchant_id: Annotated[str, Header(alias="X-Merchant-Id")] = "m_mamalin"):
-    return service.create_quest(body, x_merchant_id)
+                 x_merchant_id: Annotated[str, Header(alias="X-Merchant-Id")] = "m_mamalin",
+                 x_user_id: User = "demo-user"):
+    return service.create_quest(body, x_merchant_id, x_user_id)

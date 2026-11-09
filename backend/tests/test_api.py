@@ -21,7 +21,7 @@ def checkin(place_id="m_librarymall", **overrides):
 
 def quest(**overrides):
     return dict(title="Explore campus", zone_geojson=ZONE,
-                place_ids=["m_librarymall", "m_lakeshore"], needed_visits=2,
+                place_ids=["m_librarymall", "m_lakeshore", "m_mamalin"], needed_visits=2,
                 ends_at="2026-11-09T23:59:00-06:00", **overrides)
 
 
@@ -127,7 +127,7 @@ def test_create_quest_and_persist(tmp_path):
     ({"ends_at": "2026-11-09T00:00:00"}, "invalid_end_time"),
     ({"place_ids": ["m_librarymall", "missing"]}, "invalid_places"),
     ({"place_ids": ["m_librarymall", "m_librarymall"]}, "invalid_places"),
-    ({"needed_visits": 3}, "invalid_places"),
+    ({"needed_visits": 4}, "invalid_places"),
     ({"title": "  "}, "invalid_title"),
 ])
 def test_quest_validation(client, change, code):

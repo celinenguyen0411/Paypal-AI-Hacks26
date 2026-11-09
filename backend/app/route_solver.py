@@ -15,6 +15,7 @@ PARTY_PRICED_CATEGORIES = ("lunch", "coffee")
 HIDDEN_LABELS = {
     "deal_not_today": "Its deal doesn't run today",
     "deal_window_misses_deadline": "Its deal starts too late for your deadline",
+    "deal_not_live_at_arrival": "Its deal isn't running when you'd arrive",
     "too_far": "Too far to fit this outing",
 }
 
@@ -44,8 +45,8 @@ class Solution:
 
 
 def solve(catalog, trip):
-    choices = _candidates(catalog, trip)
-    route = _take_cheaper_picks(_quickest_route(choices, trip), choices, trip)
+    choices, quickest = _first_route_that_fits(catalog, trip)
+    route = _take_cheaper_picks(quickest, choices, trip)
     swaps = _swaps(route, choices, trip)
     return Solution(route=route, swaps=swaps, hidden=_hidden(route, choices, swaps, trip))
 
@@ -54,18 +55,28 @@ def stop_for(route, need_index):
     return next(stop for stop in route["stops"] if stop["place"]["need_index"] == need_index)
 
 
-def _candidates(catalog, trip):
-    return [_options_for(index, need, catalog, trip) for index, need in enumerate(trip.needs)]
+def _first_route_that_fits(catalog, trip):
+    try:
+        choices = _candidates(catalog, trip, known_prices_only=True)
+        return choices, _quickest_route(choices, trip)
+    except NoPlacesFit:
+        choices = _candidates(catalog, trip, known_prices_only=False)
+        return choices, _quickest_route(choices, trip)
 
 
-def _options_for(index, need, catalog, trip):
+def _candidates(catalog, trip, known_prices_only):
+    return [_options_for(index, need, catalog, trip, known_prices_only) for index, need in enumerate(trip.needs)]
+
+
+def _options_for(index, need, catalog, trip, known_prices_only):
     options = [_option(index, need, place, trip) for place in catalog if _reachable(place, need, trip)]
     if index in trip.forced:
         options = [option for option in options if option["place_id"] == trip.forced[index]]
     if not options:
         raise NoPlacesFit(f"No {need.category} places fit this walking range.")
     options.sort(key=lambda p: (p["est_cost_cents"], distance(trip.start, p["location"]), p["place_id"]))
-    return ([p for p in options if p["known_price"]] or options)[:CANDIDATES_PER_NEED]
+    known = [p for p in options if p["known_price"]] if known_prices_only else []
+    return (known or options)[:CANDIDATES_PER_NEED]
 
 
 def _reachable(place, need, trip):
@@ -76,8 +87,9 @@ def _reachable(place, need, trip):
 def _option(index, need, place, trip):
     multiplier = trip.party_size if need.category in PARTY_PRICED_CATEGORIES else 1
     explicit = need.amount_cents is not None
-    return dict(place, need_index=index, known_price=place["cost_source"] == "merchant",
-                est_cost_cents=need.amount_cents if explicit else place["est_cost_cents"] * multiplier,
+    listed = place["est_cost_cents"] * multiplier
+    return dict(place, need_index=index, known_price=place["cost_source"] == "merchant", listed_cents=listed,
+                est_cost_cents=need.amount_cents if explicit else listed,
                 cost_source="user" if explicit else place["cost_source"])
 
 
@@ -142,7 +154,7 @@ def _hidden(route, choices, swaps, trip):
 
 
 def _hidden_entry(route, index, option, offered, trip):
-    in_plan = option["place_id"] == stop_for(route, index)["place"]["place_id"]
+    in_plan = option["place_id"] in _route_ids(route)
     if in_plan or option["place_id"] in offered or not option["partner"]:
         return None
     if _best_case_net(option) >= _net_at(route, index):
@@ -153,7 +165,7 @@ def _hidden_entry(route, index, option, offered, trip):
 
 def _best_case_net(option):
     deal, cost = option["deal"], option["est_cost_cents"]
-    return cost - deal_cashback(deal, cost) if deal else cost
+    return cost - deal_cashback(deal, option["listed_cents"], cost) if deal else cost
 
 
 def _hidden_reason(route, index, option, trip):
@@ -164,7 +176,7 @@ def _hidden_reason(route, index, option, trip):
         return "deal_window_misses_deadline"
     changed = _replace(route, index, option, trip)
     if changed and deal and not stop_for(changed, index)["live"]:
-        return "deal_window_misses_deadline"
+        return "deal_not_live_at_arrival"
     return "too_far"
 
 
@@ -220,7 +232,7 @@ def _arrive(place, elapsed, arrival, allow_wait):
     if deal and not live and allow_wait:
         wait = _seconds_until_open(deal, arrival)
         live = wait > 0
-    cashback = deal_cashback(deal, place["est_cost_cents"]) if live else 0
+    cashback = deal_cashback(deal, place["listed_cents"], place["est_cost_cents"]) if live else 0
     return dict(place=place, arrive_s=elapsed, wait_s=wait, live=live, cashback=cashback)
 
 
