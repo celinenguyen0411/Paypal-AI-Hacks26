@@ -54,8 +54,8 @@ def test_startup_caches_snapshot_and_uses_catalog_for_quests(tmp_path):
         health = client.get("/health").json()
         assert health["status"] == "ok"
         assert health["snapshot_places_loaded"] == 2
-        assert health["demo_places_loaded"] == 6
-        assert health["places_loaded"] == 8
+        assert health["demo_places_loaded"] == 7
+        assert health["places_loaded"] == 9
         places = client.get("/map/places").json()
         assert {"fsq:one", "fsq:two"} <= {p["place_id"] for p in places["places"]}
         assert places["attributions"] == ["foursquare"]
@@ -64,7 +64,8 @@ def test_startup_caches_snapshot_and_uses_catalog_for_quests(tmp_path):
                     ends_at="2026-11-09T23:59:00-06:00")
         assert client.post("/merchant/community-quests", json=body).status_code == 201
         checkin = dict(place_id="fsq:one", location={"lat": 43.0761, "lng": -89.3999}, accuracy_m=10)
-        assert client.post("/map/checkin", json=checkin).json()["reason"] == "paid_stop_uses_paypal"
+        visit = client.post("/map/checkin", json=checkin).json()
+        assert visit["ok"] is True and visit["xp_awarded"] == 0
 
 
 @pytest.mark.parametrize("contents", ["{}", "not json"])

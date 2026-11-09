@@ -2,7 +2,8 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request
 
-from .ask_schemas import AskRequest, AskResponse, ConfirmRequest, ConfirmResponse
+from .ask_schemas import (AskRequest, AskResponse, ConfirmRequest, ConfirmResponse,
+                          SwapRequest, SwapResponse)
 from .planning import PlanningService
 from .routes import User
 
@@ -24,3 +25,8 @@ def ask(body: AskRequest, planner: Planner, x_user_id: User = "demo-user"):
 def confirm(plan_id: str, planner: Planner, body: ConfirmRequest = ConfirmRequest(),
             x_user_id: User = "demo-user"):
     return planner.confirm(plan_id, body, x_user_id)
+
+
+@ask_router.post("/plans/{plan_id}/swap", response_model=SwapResponse)
+def swap(plan_id: str, body: SwapRequest, planner: Planner, x_user_id: User = "demo-user"):
+    return planner.swap(plan_id, body, x_user_id)

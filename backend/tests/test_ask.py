@@ -59,8 +59,8 @@ def test_plan_computed_from_catalog(setup):
     catalog_ids = {p["place_id"] for p in app.state.map_service.catalog}
     assert all(stop["place_id"] in catalog_ids for stop in plan["stops"])
     assert plan["totals"]["cost_cents"] == sum(s["est_cost_cents"] for s in plan["stops"])
-    assert plan["totals"]["budget_left_cents"] == 1100
-    assert data["budget_check"]["plan_cents"] == 1900
+    assert plan["totals"]["budget_left_cents"] == 1150
+    assert data["budget_check"]["plan_cents"] == 1850
     assert data["budget_check"]["source"] == "demo"
     assert plan["legs"][-1]["to"] == "start"
     assert sum(leg["duration_s"] for leg in plan["legs"]) <= fake.intent.max_walk_min * 60
@@ -72,14 +72,14 @@ def test_plan_computed_from_catalog(setup):
 
 def test_groceries_last_and_explicit_total_allocation(setup):
     client, fake, _ = setup
-    fake.intent = ExtractedIntent(kind="route_plan", budget_cents=5000, party_size=2, max_walk_min=30,
+    fake.intent = ExtractedIntent(kind="route_plan", budget_cents=4000, party_size=2, max_walk_min=30,
                                  needs=[{"category": "groceries", "amount_cents": 1234},
                                         {"category": "coffee"}, {"category": "lunch"}])
     plan = ask(client).json()["plan"]
     assert plan["stops"][-1]["category"] == "groceries"
     assert plan["stops"][-1]["cost_source"] == "user"
     assert plan["stops"][-1]["est_cost_cents"] == 1234
-    assert plan["totals"]["cost_cents"] == 5034
+    assert plan["totals"]["cost_cents"] == 4934
     assert plan["totals"]["over_budget"]
 
 

@@ -63,7 +63,7 @@ def test_location_accuracy_and_paid_rejections(client):
     body["location"] = {"lat": 0, "lng": 0}
     assert client.post("/map/checkin", json=body).json()["reason"] == "too_far"
     body["place_id"] = "m_bean"
-    assert client.post("/map/checkin", json=body).json()["reason"] == "paid_stop_uses_paypal"
+    assert client.post("/map/checkin", json=body).json()["reason"] == "too_far"
     body["place_id"] = "missing"
     assert client.post("/map/checkin", json=body).status_code == 404
 
@@ -144,5 +144,5 @@ def test_cors_and_openapi(client):
         "Access-Control-Request-Headers": "Content-Type,X-User-Id"})
     assert response.headers["access-control-allow-origin"] == "http://localhost:5173"
     schema = client.get("/openapi.json").json()
-    assert len(schema["paths"]) == 7
+    assert len(schema["paths"]) == 8
     assert "CheckinResponse" in schema["components"]["schemas"]

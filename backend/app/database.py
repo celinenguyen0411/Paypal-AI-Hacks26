@@ -3,7 +3,7 @@ import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 
-from .seed import PLACES, ZONE
+from .seed import PLACES, SEEDED_QUEST_ID, ZONE
 
 
 class Database:
@@ -37,13 +37,16 @@ class Database:
                     id TEXT PRIMARY KEY, user_id TEXT NOT NULL, payload TEXT NOT NULL,
                     confirmed INTEGER NOT NULL DEFAULT 0
                 );
+                CREATE TABLE IF NOT EXISTS plan_contexts (
+                    plan_id TEXT PRIMARY KEY, user_id TEXT NOT NULL, payload TEXT NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS plan_awards (
                     user_id TEXT, day TEXT, PRIMARY KEY(user_id, day)
                 );
             """)
             start = now.replace(hour=0, minute=0, second=0, microsecond=0)
             start -= timedelta(days=start.weekday())
-            quest = dict(id="cq_state_st", title="Explore State Street: visit 2 local spots this week",
+            quest = dict(id=SEEDED_QUEST_ID, title="Explore State Street: visit 2 local spots this week",
                          sponsor={"merchant_id": "m_mamalin", "name": "Mama Lin's Noodles"},
                          zone_geojson=ZONE, place_ids=[p["place_id"] for p in PLACES],
                          needed_visits=2, purchase_required=False,
@@ -81,6 +84,11 @@ class Database:
         connection.execute("INSERT INTO visits VALUES (?,?,?,?,?)", (user, place_id, day, timestamp, xp))
         return None
 
+    def remove_live_quests(self, connection, merchant_id, now):
+        for quest in self.active_quests(connection, now):
+            if quest["sponsor"]["merchant_id"] == merchant_id and quest["id"] != SEEDED_QUEST_ID:
+                connection.execute("DELETE FROM quests WHERE id=?", (quest["id"],))
+
     def save_quest(self, connection, quest):
         connection.execute("INSERT INTO quests VALUES (?,?)", (quest["id"], json.dumps(quest)))
 
@@ -90,7 +98,7 @@ class Database:
                                      (conversation_id, user)).fetchone()
         return json.loads(row[0]) if row else None
 
-    def save_exchange(self, conversation_id, user, state, plan):
+    def save_exchange(self, conversation_id, user, state, plan, context=None):
         with self.connect() as connection:
             connection.execute(
                 "INSERT INTO conversations VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload",
@@ -99,6 +107,16 @@ class Database:
             if plan:
                 connection.execute("INSERT INTO plans (id,user_id,payload) VALUES (?,?,?)",
                                    (plan["plan_id"], user, json.dumps(plan)))
+                connection.execute("INSERT INTO plan_contexts VALUES (?,?,?)",
+                                   (plan["plan_id"], user, json.dumps(context)))
+
+    def plan_with_context(self, plan_id, user):
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT plans.payload, plan_contexts.payload FROM plans "
+                "JOIN plan_contexts ON plan_contexts.plan_id = plans.id "
+                "WHERE plans.id=? AND plans.user_id=?", (plan_id, user)).fetchone()
+        return (json.loads(row[0]), json.loads(row[1])) if row else None
 
     def confirm_plan(self, plan_id, user, day):
         """Confirm a saved plan once; serialize daily awards across plans and retries."""
