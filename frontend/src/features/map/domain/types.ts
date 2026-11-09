@@ -170,6 +170,12 @@ export type CheckinReason =
   | "paid_stop_uses_paypal"
   | "simulation_not_allowed";
 
+export interface QuestReward {
+  quest_id: string;
+  badge: string;
+  xp: number;
+}
+
 export interface CheckinResponse {
   ok: boolean;
   distance_m: number;
@@ -177,6 +183,7 @@ export interface CheckinResponse {
   league_xp_awarded: number;
   reason: CheckinReason | null;
   community_progress: QuestProgress[];
+  quest_rewards: QuestReward[];
 }
 
 export interface Quest {
@@ -188,7 +195,7 @@ export interface Quest {
   needed_visits: number;
   ends_at: string;
   reward: { badge: string; xp: number };
-  progress: { visited: number };
+  progress: { visited: number; rewarded: number };
 }
 
 export interface QuestsResponse {

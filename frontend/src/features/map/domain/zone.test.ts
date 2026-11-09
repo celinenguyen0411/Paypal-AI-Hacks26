@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Polygon } from "geojson";
-import { endDateRange, endOfDay, placesInside, zoneAreaKm2, zoneChecks } from "./zone";
+import { endDateRange, endOfDay, placesInside, visitsAllowed, zoneAreaKm2, zoneChecks } from "./zone";
 
 const campus: Polygon = {
   type: "Polygon",
@@ -16,17 +16,20 @@ describe("zone", () => {
     expect(placesInside(campus, [inside, outside]).map((p) => p.place_id)).toEqual(["in"]);
   });
   it("passes a walkable zone with two places", () => {
-    expect(zoneChecks(campus, [inside, alsoInside]).every((c) => c.ok)).toBe(true);
+    expect(zoneChecks(campus, [inside, alsoInside], "in").every((c) => c.ok)).toBe(true);
   });
   it("fails a zone with one place", () => {
-    expect(zoneChecks(campus, [inside]).map((c) => c.ok)).toEqual([true, false]);
+    expect(zoneChecks(campus, [inside], "in").map((c) => c.ok)).toEqual([true, false, true]);
+  });
+  it("fails a zone that leaves out the publishing shop", () => {
+    expect(zoneChecks(campus, [inside, alsoInside], "elsewhere").map((c) => c.ok)).toEqual([true, true, false]);
   });
   it("fails a zone over 2 square kilometres", () => {
     const huge: Polygon = {
       type: "Polygon",
       coordinates: [[[-89.5, 43.0], [-89.3, 43.0], [-89.3, 43.1], [-89.5, 43.1], [-89.5, 43.0]]],
     };
-    expect(zoneChecks(huge, [inside, alsoInside]).map((c) => c.ok)).toEqual([false, true]);
+    expect(zoneChecks(huge, [inside, alsoInside], "in").map((c) => c.ok)).toEqual([false, true, true]);
   });
 });
 
@@ -40,5 +43,17 @@ describe("quest end dates", () => {
   });
   it("ends the chosen day in the same offset as the clock", () => {
     expect(endOfDay("2026-11-11", frozen)).toBe("2026-11-11T23:59:00-06:00");
+  });
+});
+
+describe("visitsAllowed", () => {
+  it("accepts a goal between two and the number of places", () => {
+    expect(visitsAllowed(2, 3)).toBe(true);
+    expect(visitsAllowed(3, 3)).toBe(true);
+  });
+  it("rejects a blank or too large goal", () => {
+    expect(visitsAllowed(0, 3)).toBe(false);
+    expect(visitsAllowed(4, 3)).toBe(false);
+    expect(visitsAllowed(2.5, 3)).toBe(false);
   });
 });

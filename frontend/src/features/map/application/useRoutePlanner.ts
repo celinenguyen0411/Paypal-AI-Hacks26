@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import type { BudgetCheck, LatLng, Plan, Start, SwapOffer } from "../domain/types";
 import { ApiError, type QuestApi } from "../infrastructure/questApi";
 
@@ -37,21 +37,26 @@ function errorMessage(failure: unknown): string {
 
 export function useRoutePlanner(api: QuestApi, location: LatLng | null) {
   const [state, setState] = useState<RouteState>(EMPTY);
+  const session = useRef(0);
 
   const run = useCallback(async (busy: Busy, action: () => Promise<Partial<RouteState>>) => {
+    const startedIn = session.current;
     setState((previous) => ({ ...previous, busy, error: null }));
     try {
       const changes = await action();
-      setState((previous) => ({ ...previous, ...changes, busy: null }));
+      if (session.current === startedIn) setState((previous) => ({ ...previous, ...changes, busy: null }));
     } catch (failure) {
-      setState((previous) => ({ ...previous, busy: null, error: errorMessage(failure) }));
+      if (session.current === startedIn) {
+        setState((previous) => ({ ...previous, busy: null, error: errorMessage(failure) }));
+      }
     }
   }, []);
 
   const ask = useCallback(
     (message: string) =>
       run("asking", async () => {
-        const response = await api.ask(message, state.conversationId, location);
+        const planId = state.current?.plan.plan_id ?? null;
+        const response = await api.ask(message, state.conversationId, location, planId);
         const planned = response.plan
           ? { current: { plan: response.plan, budgetCheck: response.budget_check }, undoStack: [], confirmedXp: null }
           : {};
@@ -62,7 +67,7 @@ export function useRoutePlanner(api: QuestApi, location: LatLng | null) {
           ...planned,
         };
       }),
-    [api, location, run, state.conversationId],
+    [api, location, run, state],
   );
 
   const swap = useCallback(
@@ -100,7 +105,10 @@ export function useRoutePlanner(api: QuestApi, location: LatLng | null) {
     });
   }, [api, run, state]);
 
-  const startOver = useCallback(() => setState(EMPTY), []);
+  const startOver = useCallback(() => {
+    session.current += 1;
+    setState(EMPTY);
+  }, []);
 
   return { ...state, ask, swap, undoSwap, confirm, startOver };
 }

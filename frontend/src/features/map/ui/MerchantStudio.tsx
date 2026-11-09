@@ -1,8 +1,9 @@
 import { useMemo, useState, type FormEvent } from "react";
 import type { Polygon } from "geojson";
-import { endDateRange, endOfDay, MIN_ZONE_PLACES, placesInside, zoneChecks } from "../domain/zone";
+import { useQuestPublishing } from "../application/useQuestPublishing";
+import { endDateRange, endOfDay, MIN_ZONE_PLACES, placesInside, visitsAllowed, zoneChecks } from "../domain/zone";
 import type { Place } from "../domain/types";
-import { ApiError, type QuestApi } from "../infrastructure/questApi";
+import type { QuestApi } from "../infrastructure/questApi";
 
 interface MerchantStudioProps {
   api: QuestApi;
@@ -22,16 +23,21 @@ export function MerchantStudio({ api, catalog, clockIso, zone, onRedraw, onCreat
   const [endDate, setEndDate] = useState(range.suggested);
   const [excluded, setExcluded] = useState<string[]>([]);
   const [neededVisits, setNeededVisits] = useState(MIN_ZONE_PLACES);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { publish, saving, error } = useQuestPublishing(api, onCreated);
 
   const inZone = useMemo(
     () => (zone ? placesInside(zone, catalog.filter((place) => place.partner || place.category === "free")) : []),
     [zone, catalog],
   );
   const chosen = inZone.filter((place) => !excluded.includes(place.place_id));
-  const checks = zone ? zoneChecks(zone, chosen) : [];
-  const ready = Boolean(title.trim()) && checks.length > 0 && checks.every((check) => check.ok);
+  const checks = zone ? zoneChecks(zone, chosen, merchantId) : [];
+  const endDateOk = endDate >= range.min && endDate <= range.max;
+  const ready =
+    Boolean(title.trim()) &&
+    endDateOk &&
+    visitsAllowed(neededVisits, chosen.length) &&
+    checks.length > 0 &&
+    checks.every((check) => check.ok);
 
   const toggle = (placeId: string) =>
     setExcluded((current) =>
@@ -41,25 +47,16 @@ export function MerchantStudio({ api, catalog, clockIso, zone, onRedraw, onCreat
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (!zone) return;
-    setSaving(true);
-    setError(null);
-    try {
-      await api.createQuest(
-        {
-          title: title.trim(),
-          zone_geojson: zone,
-          place_ids: chosen.map((place) => place.place_id),
-          needed_visits: Math.min(neededVisits, chosen.length),
-          ends_at: endOfDay(endDate, clockIso),
-        },
-        merchantId,
-      );
-      onCreated();
-    } catch (failure) {
-      setError(failure instanceof ApiError ? failure.message : "Couldn't save this quest. Please try again.");
-    } finally {
-      setSaving(false);
-    }
+    await publish(
+      {
+        title: title.trim(),
+        zone_geojson: zone,
+        place_ids: chosen.map((place) => place.place_id),
+        needed_visits: neededVisits,
+        ends_at: endOfDay(endDate, clockIso),
+      },
+      merchantId,
+    );
   };
 
   return (

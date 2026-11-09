@@ -44,6 +44,7 @@ interface QuestCardProps {
 function QuestCard({ quest, catalog, checkin }: QuestCardProps) {
   const visited = Math.min(quest.progress.visited, quest.needed_visits);
   const complete = visited >= quest.needed_visits;
+  const earned = quest.progress.rewarded > 0;
   const places = catalog.filter((place) => quest.place_ids.includes(place.place_id));
   return (
     <section className="card quest">
@@ -62,13 +63,16 @@ function QuestCard({ quest, catalog, checkin }: QuestCardProps) {
         · No purchase needed. A check-in counts.
       </p>
       <p className={complete ? "notice good" : "sub"}>
-        {complete ? "Quest complete! Reward: " : "Reward: "}
+        {earned ? "Quest complete! Earned: " : complete ? "Quest complete. Reward: " : "Reward: "}
         {quest.reward.badge.replaceAll("_", " ")} badge + {quest.reward.xp} XP
       </p>
       <ul className="quest-places">
         {places.map((place) => (
           <li key={place.place_id}>
-            <b>{place.name}</b>
+            <b>
+              {place.name}
+              {place.sponsored && <span className="tag sp">Sponsored</span>}
+            </b>
             <CheckinButtons place={place} checkin={checkin} />
           </li>
         ))}

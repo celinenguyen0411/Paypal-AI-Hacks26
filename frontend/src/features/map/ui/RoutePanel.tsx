@@ -64,6 +64,10 @@ function PlanDetails({ plan, planner }: { plan: Plan; planner: RoutePlanner }) {
   return (
     <>
       <BudgetBar plan={plan} />
+      <p className="sub">Preview: no payment is taken from this screen.</p>
+      {plan.source === "fallback_seeded" && (
+        <p className="sub">Live places unavailable: using a saved snapshot. Prices marked ~ are estimates.</p>
+      )}
       {planner.current?.budgetCheck && (
         <p className="sub">
           {planner.current.budgetCheck.ok ? "Fits" : "Exceeds"} your{" "}

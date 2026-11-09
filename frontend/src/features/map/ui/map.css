@@ -736,3 +736,7 @@ ol.stops {
   content: "✓ ";
   color: var(--ok);
 }
+
+.quest-places .tag {
+  margin-left: 6px;
+}
