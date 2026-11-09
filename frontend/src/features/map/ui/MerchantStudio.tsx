@@ -66,7 +66,7 @@ export function MerchantStudio({ api, catalog, clockIso, zone, onRedraw, onCreat
     <form className="panel-body" onSubmit={(event) => void submit(event)}>
       <h2 className="quest-title">Merchant studio</h2>
       <p className="sub">
-        {zone ? "Zone drawn. Choose who takes part." : "Click the map to draw your zone. Double-click to finish."}
+        {zone ? "Zone drawn. Choose who takes part." : "Click the map to add corners. Click the first corner again to finish."}
       </p>
       <label className="field">
         Your shop
