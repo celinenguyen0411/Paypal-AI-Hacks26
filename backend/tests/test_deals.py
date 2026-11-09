@@ -220,3 +220,7 @@ def test_the_route_will_not_wait_more_than_ten_minutes(client, monkeypatch):
     assert stop["wait_s"] == 0
     assert stop["deal_live_at_arrival"] is False
     assert stop["cashback_cents"] == 0
+
+
+def test_the_fallback_reply_reads_the_return_time_like_a_person(client):
+    assert "1:16 PM" in ask(client)["reply"]
