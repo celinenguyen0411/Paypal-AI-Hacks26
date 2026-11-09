@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { CHECKIN_MESSAGES } from "../domain/places";
 import type { CheckinResponse, DemoInfo, Place } from "../domain/types";
 import { ApiError, type CheckinInput, type QuestApi } from "../infrastructure/questApi";
@@ -21,6 +21,8 @@ function currentPosition(): Promise<GeolocationPosition> {
 function successMessage(result: CheckinResponse): string {
   const reward = result.xp_awarded > 0 ? `+${result.xp_awarded} XP` : "Visit counted";
   const quest = result.community_progress[0];
+  const earned = result.quest_rewards[0];
+  if (earned) return `Checked in. ${reward}. Quest complete: +${earned.xp} XP and a new badge!`;
   if (!quest) return `Checked in. ${reward}.`;
   return `Checked in. ${reward}. Quest: ${Math.min(quest.visited, quest.needed)}/${quest.needed} visited.`;
 }
@@ -33,6 +35,11 @@ function failureMessage(failure: unknown): string {
 export function useCheckin(api: QuestApi, demo: DemoInfo | null, onCheckedIn: () => void) {
   const [notice, setNotice] = useState<CheckinNotice | null>(null);
   const [busyPlaceId, setBusyPlaceId] = useState<string | null>(null);
+  const currentApi = useRef(api);
+
+  useEffect(() => {
+    currentApi.current = api;
+  }, [api]);
 
   const realInput = useCallback(async (place: Place): Promise<CheckinInput> => {
     const { coords } = await currentPosition();
@@ -59,11 +66,14 @@ export function useCheckin(api: QuestApi, demo: DemoInfo | null, onCheckedIn: ()
       setBusyPlaceId(place.place_id);
       try {
         const result = await api.checkin(await (pretend ? pretendInput(place) : realInput(place)));
+        if (currentApi.current !== api) return;
         const message = result.ok ? successMessage(result) : CHECKIN_MESSAGES[result.reason ?? "too_far"];
         setNotice({ placeId: place.place_id, ok: result.ok, message });
         if (result.ok) onCheckedIn();
       } catch (failure) {
-        setNotice({ placeId: place.place_id, ok: false, message: failureMessage(failure) });
+        if (currentApi.current === api) {
+          setNotice({ placeId: place.place_id, ok: false, message: failureMessage(failure) });
+        }
       } finally {
         setBusyPlaceId(null);
       }

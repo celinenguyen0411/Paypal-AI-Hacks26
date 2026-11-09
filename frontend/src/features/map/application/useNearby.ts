@@ -6,7 +6,7 @@ import { ApiError, type QuestApi } from "../infrastructure/questApi";
 
 export const ALL_CATEGORIES: Category[] = ["lunch", "coffee", "groceries", "free"];
 
-type ZoneCache = Partial<Record<WalkMinutes, FeatureCollection<Polygon> | null>>;
+type ZoneCache = Partial<Record<WalkMinutes, FeatureCollection<Polygon>>>;
 
 export function useNearby(api: QuestApi, center: LatLng) {
   const [categories, setCategories] = useState<Category[]>(ALL_CATEGORIES);
@@ -42,12 +42,12 @@ export function useNearby(api: QuestApi, center: LatLng) {
   useEffect(() => {
     let cancelled = false;
     const cached = zones.current[walkMin];
-    if (cached !== undefined) {
+    if (cached) {
       setStreetZone(cached);
       return;
     }
     fetchWalkZone({ lat, lng }, walkMin).then((zone) => {
-      zones.current[walkMin] = zone;
+      if (zone) zones.current[walkMin] = zone;
       if (!cancelled) setStreetZone(zone);
     });
     return () => {

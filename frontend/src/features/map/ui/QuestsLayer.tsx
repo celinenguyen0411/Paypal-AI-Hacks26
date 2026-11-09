@@ -7,9 +7,10 @@ interface QuestsLayerProps {
   quests: Quest[];
   catalog: Place[];
   onSelect: (place: Place) => void;
+  interactive: boolean;
 }
 
-export function QuestsLayer({ quests, catalog, onSelect }: QuestsLayerProps) {
+export function QuestsLayer({ quests, catalog, onSelect, interactive }: QuestsLayerProps) {
   const zones = useMemo<FeatureCollection<Polygon>>(
     () => ({
       type: "FeatureCollection",
@@ -33,7 +34,9 @@ export function QuestsLayer({ quests, catalog, onSelect }: QuestsLayerProps) {
           key={place.place_id}
           latitude={place.location.lat}
           longitude={place.location.lng}
+          style={interactive ? undefined : { pointerEvents: "none" }}
           onClick={(event) => {
+            if (!interactive) return;
             event.originalEvent.stopPropagation();
             onSelect(place);
           }}

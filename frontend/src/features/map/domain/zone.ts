@@ -24,13 +24,25 @@ export function placesInside<T extends Located>(zone: Polygon, places: T[]): T[]
   );
 }
 
-export function zoneChecks(zone: Polygon, participating: Located[]): ZoneCheck[] {
+export function visitsAllowed(goal: number, placeCount: number): boolean {
+  return Number.isInteger(goal) && goal >= MIN_ZONE_PLACES && goal <= placeCount;
+}
+
+export function zoneChecks(
+  zone: Polygon,
+  participating: (Located & { place_id: string })[],
+  merchantId: string,
+): ZoneCheck[] {
   const km2 = zoneAreaKm2(zone);
   return [
     { ok: km2 <= MAX_ZONE_KM2, text: `Under ${MAX_ZONE_KM2} km² (now ${km2.toFixed(2)} km²)` },
     {
       ok: participating.length >= MIN_ZONE_PLACES,
       text: `At least ${MIN_ZONE_PLACES} places taking part (now ${participating.length})`,
+    },
+    {
+      ok: participating.some((place) => place.place_id === merchantId),
+      text: "Your own shop is taking part",
     },
   ];
 }
