@@ -27,7 +27,11 @@ class Database:
             connection.executescript("""
                 CREATE TABLE IF NOT EXISTS visits (
                     user_id TEXT, place_id TEXT, day TEXT, visited_at TEXT, xp INTEGER,
+                    simulated INTEGER NOT NULL DEFAULT 0,
                     PRIMARY KEY(user_id, place_id, day)
+                );
+                CREATE TABLE IF NOT EXISTS quest_rewards (
+                    user_id TEXT, quest_id TEXT, PRIMARY KEY(user_id, quest_id)
                 );
                 CREATE TABLE IF NOT EXISTS quests (id TEXT PRIMARY KEY, payload TEXT);
                 CREATE TABLE IF NOT EXISTS conversations (
@@ -44,6 +48,9 @@ class Database:
                     user_id TEXT, day TEXT, PRIMARY KEY(user_id, day)
                 );
             """)
+            columns = {row["name"] for row in connection.execute("PRAGMA table_info(visits)")}
+            if "simulated" not in columns:
+                connection.execute("ALTER TABLE visits ADD COLUMN simulated INTEGER NOT NULL DEFAULT 0")
             start = now.replace(hour=0, minute=0, second=0, microsecond=0)
             start -= timedelta(days=start.weekday())
             quest = dict(id=SEEDED_QUEST_ID, title="Explore State Street: visit 2 local spots this week",
@@ -55,23 +62,23 @@ class Database:
             connection.execute("INSERT OR IGNORE INTO quests VALUES (?, ?)",
                                (quest["id"], json.dumps(quest)))
 
-    def active_quests(self, connection, now):
+    def active_quests(self, connection, now, user):
         return [q for row in connection.execute("SELECT payload FROM quests")
                 if datetime.fromisoformat((q := json.loads(row[0]))["starts_at"]) <= now
-                < datetime.fromisoformat(q["ends_at"])]
+                < datetime.fromisoformat(q["ends_at"]) and q.get("created_by") in (None, user)]
 
     def progress(self, connection, quest, user):
         placeholders = ",".join("?" for _ in quest["place_ids"])
         count = connection.execute(
             f"SELECT COUNT(DISTINCT place_id) FROM visits WHERE user_id=? "
             f"AND place_id IN ({placeholders}) AND julianday(visited_at)>=julianday(?) "
-            "AND julianday(visited_at)<=julianday(?)",
-            [user, *quest["place_ids"], quest["starts_at"], quest["ends_at"]],
+            "AND julianday(visited_at)<=julianday(?) AND rowid>?",
+            [user, *quest["place_ids"], quest["starts_at"], quest["ends_at"], quest.get("after_visit_id", 0)],
         ).fetchone()[0]
         return dict(quest_id=quest["id"], visited=count, needed=quest["needed_visits"],
                     completed=count >= quest["needed_visits"])
 
-    def record_visit(self, connection, user, place_id, day, timestamp, xp, daily_cap):
+    def record_visit(self, connection, user, place_id, day, timestamp, xp, daily_cap, simulated):
         """Return a rejection reason or insert a visit; requires an IMMEDIATE transaction."""
         if connection.execute("SELECT 1 FROM visits WHERE user_id=? AND place_id=? AND day=?",
                               (user, place_id, day)).fetchone():
@@ -81,13 +88,26 @@ class Database:
         ).fetchone()[0]
         if awarded + xp > daily_cap:
             return "daily_cap"
-        connection.execute("INSERT INTO visits VALUES (?,?,?,?,?)", (user, place_id, day, timestamp, xp))
+        connection.execute("INSERT INTO visits (user_id, place_id, day, visited_at, xp, simulated) "
+                           "VALUES (?,?,?,?,?,?)", (user, place_id, day, timestamp, xp, int(simulated)))
         return None
 
-    def remove_live_quests(self, connection, merchant_id, now):
-        for quest in self.active_quests(connection, now):
-            if quest["sponsor"]["merchant_id"] == merchant_id and quest["id"] != SEEDED_QUEST_ID:
+    def remove_live_quests(self, connection, merchant_id, creator, now):
+        for quest in self.active_quests(connection, now, creator):
+            if (quest["sponsor"]["merchant_id"] == merchant_id and quest.get("created_by") == creator
+                    and quest["id"] != SEEDED_QUEST_ID):
                 connection.execute("DELETE FROM quests WHERE id=?", (quest["id"],))
+
+    def latest_visit_id(self, connection):
+        return connection.execute("SELECT COALESCE(MAX(rowid), 0) FROM visits").fetchone()[0]
+
+    def award_quest(self, connection, user, quest_id):
+        inserted = connection.execute("INSERT OR IGNORE INTO quest_rewards VALUES (?,?)", (user, quest_id))
+        return inserted.rowcount == 1
+
+    def quest_rewarded(self, connection, user, quest_id):
+        return connection.execute("SELECT 1 FROM quest_rewards WHERE user_id=? AND quest_id=?",
+                                  (user, quest_id)).fetchone() is not None
 
     def save_quest(self, connection, quest):
         connection.execute("INSERT INTO quests VALUES (?,?)", (quest["id"], json.dumps(quest)))

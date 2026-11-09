@@ -11,6 +11,7 @@ class AskRequest(BaseModel):
     message: str = Field(min_length=1, max_length=4000)
     location: Location | None = None
     conversation_id: str | None = Field(default=None, min_length=1, max_length=100)
+    plan_id: str | None = Field(default=None, min_length=1, max_length=100)
 
     @field_validator("message")
     @classmethod
@@ -130,7 +131,7 @@ class SwapOffer(BaseModel):
 class HiddenPlace(BaseModel):
     place_id: str
     name: str
-    reason: Literal["deal_not_today", "deal_window_misses_deadline", "too_far"]
+    reason: Literal["deal_not_today", "deal_window_misses_deadline", "deal_not_live_at_arrival", "too_far"]
     label: str
 
 

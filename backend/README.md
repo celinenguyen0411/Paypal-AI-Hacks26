@@ -86,7 +86,7 @@ Change response contracts in `schemas.py`, domain rules in `services.py`, and SQ
 
 At startup, the app reads [`data/raw/entities.json`](data/raw/entities.json), validates
 records, maps supported food/shopping categories, filters to Madison, and caches the catalog
-in memory. It retains the six fictional demo places in `app/seed.py` for partner deals
+in memory. It retains the seven fictional demo places in `app/seed.py` for partner deals
 and free-stop quest/check-in flows. Restart the app to reload a changed dataset.
 See the [dataset guide](data/README.md) for source details and filtering rules.
 
@@ -170,7 +170,7 @@ curl -X POST http://localhost:8000/map/checkin \
 
 curl -X POST http://localhost:8000/merchant/community-quests \
   -H 'Content-Type: application/json' -H 'X-Merchant-Id: m_mamalin' \
-  -d '{"title":"Explore campus","zone_geojson":{"type":"Polygon","coordinates":[[[-89.402,43.072],[-89.388,43.072],[-89.388,43.079],[-89.402,43.079],[-89.402,43.072]]]},"place_ids":["m_librarymall","m_lakeshore"],"needed_visits":2,"ends_at":"2026-11-09T23:59:00-06:00"}'
+  -d '{"title":"Explore campus","zone_geojson":{"type":"Polygon","coordinates":[[[-89.402,43.072],[-89.388,43.072],[-89.388,43.079],[-89.402,43.079],[-89.402,43.072]]]},"place_ids":["m_librarymall","m_lakeshore","m_mamalin"],"needed_visits":2,"ends_at":"2026-11-09T23:59:00-06:00"}'
 ```
 
 ## Demo behavior and rules
@@ -189,7 +189,8 @@ curl -X POST http://localhost:8000/merchant/community-quests \
   Any other paid place returns `paid_stop_uses_paypal`; no payment flow is implemented.
 - Quest progress counts distinct participating places visited during the quest's active period.
   Visit both `m_librarymall` and `m_lakeshore` to complete the seeded quest without purchases.
-  Quest badges and the 40 XP reward are preview metadata; completion reward issuance is deferred.
+  The check-in that completes a quest returns its badge and 40 XP in `quest_rewards`, once per user and quest.
+  Simulated visits are flagged in the `visits` table.
 - Merchant creation accepts one closed polygon ring, without holes or self-intersections,
   with area at most 2 km². All selected places must exist and lie inside/on the zone.
   At least two distinct places are required; `needed_visits` must be between two and their count.
@@ -197,7 +198,11 @@ curl -X POST http://localhost:8000/merchant/community-quests \
   `purchase_required` is always false; supplying it in a creation request is rejected.
 - `places_in_zone` counts all catalog places inside the polygon, including unselected places.
   There is no participation consent workflow in this scaffold.
-- A merchant's new quest replaces its previous live quest. The seeded quest is never replaced.
+- The publishing merchant's own shop must be one of the selected places, otherwise `merchant_not_in_quest`.
+- In demo mode a created quest is visible only to the `X-User-Id` that created it, and replaces only that user's
+  previous quest for the same merchant. Outside demo mode quests are public. The seeded quest is never replaced.
+- A new quest counts only visits made after it was created.
+- `/ask` and quest creation allow 10 requests per minute per address, otherwise HTTP 429 `too_many_requests`.
 - Validation errors return HTTP 422 with `{ "error": "code", "message": "...", "demo": ... }`.
   Unknown check-in places return HTTP 404. Semantic check-in rejections return HTTP 200,
   `ok: false`, zero XP, and a `reason` from the contract.
@@ -243,7 +248,7 @@ Price tiers are not converted to exact costs. Demo listings, prices, and offers
 remain fictional fixtures. Walking times use
 great-circle distance / 1.3 m/s. The boundary is a circular estimate, not a routed isochrone;
 polygon area uses a campus-scale local projection. No Google Places, routing provider,
-payments, XP account balances, rate limiting, or production authorization is implemented.
+payments, XP account balances, or production authorization is implemented. Rate limits are per-process and in memory.
 The deal's `live_now` is its time-window status, not verified first-visit eligibility.
 Imported opening schedules are not evaluated; the API does not promise a place is open now.
 Ask uses the same catalog and SQLite database. Its walking routes are straight-line estimates,

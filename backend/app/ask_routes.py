@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, Request
 from .ask_schemas import (AskRequest, AskResponse, ConfirmRequest, ConfirmResponse,
                           SwapRequest, SwapResponse)
 from .planning import PlanningService
+from .rate_limit import limit_ask
 from .routes import User
 
 
@@ -16,7 +17,7 @@ Planner = Annotated[PlanningService, Depends(get_planner)]
 ask_router = APIRouter(prefix="/ask", tags=["Ask"])
 
 
-@ask_router.post("", response_model=AskResponse)
+@ask_router.post("", response_model=AskResponse, dependencies=[Depends(limit_ask)])
 def ask(body: AskRequest, planner: Planner, x_user_id: User = "demo-user"):
     return planner.ask(body, x_user_id)
 
