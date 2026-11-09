@@ -2,20 +2,22 @@ import math
 from datetime import datetime, timedelta
 from uuid import uuid4
 
-from shapely.affinity import scale as scale_geometry
-from shapely.geometry import Point, shape
+from shapely.affinity import scale as scale_geometry  # pyright: ignore[reportMissingModuleSource]
+from shapely.geometry import Point, shape  # pyright: ignore[reportMissingModuleSource]
 
 from .config import TZ, Settings
 from .database import Database
 from .errors import APIError
-from .geometry import distance, walking_zone
+from .deals import deal_live
+from .geometry import WALK_SPEED_M_S, distance, walking_zone
 from .schemas import CheckinRequest, CreateQuestRequest
 from .seed import CAMPUS, FROZEN_AT
 
-WALK_SPEED_M_S = 1.3
 CHECKIN_RADIUS_M = 75
 MAX_ACCURACY_M = 50
 DAILY_XP_CAP = 100
+CHECKIN_OPENS_HOUR = 7
+CHECKIN_CLOSES_HOUR = 21
 
 
 class MapService:
@@ -49,9 +51,7 @@ class MapService:
             item = dict(seed, walk_s=math.ceil(meters / WALK_SPEED_M_S),
                         community_quest_ids=[q["id"] for q in quests if seed["place_id"] in q["place_ids"]])
             if item["deal"]:
-                local = self.now().astimezone(TZ)
-                item["deal"] = dict(item["deal"], live_now=local.weekday() in (1, 2, 3)
-                                    and 14 <= local.hour < 17)
+                item["deal"] = dict(item["deal"], live_now=deal_live(item["deal"], self.now()))
             result.append(item)
         return dict(demo=self.demo(), source="fallback_seeded", places=sorted(result, key=lambda p: p["walk_s"]),
                     isochrone_geojson=walking_zone(lat, lng, radius),
@@ -75,29 +75,35 @@ class MapService:
         if place is None:
             raise APIError("place_not_found", "This place is not in the local map catalog.", 404)
         meters = round(distance(body.location.model_dump(), place["location"]))
-        reason = None
-        if body.simulated and not self.settings.demo_mode:
-            reason = "simulation_not_allowed"
-        elif place["category"] != "free":
-            reason = "paid_stop_uses_paypal"
-        elif not body.simulated and body.accuracy_m > MAX_ACCURACY_M:
-            reason = "low_accuracy"
-        elif not body.simulated and distance(body.location.model_dump(), place["location"]) > CHECKIN_RADIUS_M:
-            reason = "too_far"
         today, timestamp = self.now().date().isoformat(), self.now().isoformat()
         with self.database.connect() as connection:
             # Serialize the read/check/award so concurrent retries cannot duplicate XP or exceed the cap.
             connection.execute("BEGIN IMMEDIATE")
+            quests = [q for q in self.database.active_quests(connection, self.now()) if body.place_id in q["place_ids"]]
+            reason = self.checkin_rejection(body, place, bool(quests))
             if reason is None:
                 reason = self.database.record_visit(
                     connection, x_user_id, body.place_id, today, timestamp,
                     place["checkin_xp"], DAILY_XP_CAP,
                 )
-            quests = [q for q in self.database.active_quests(connection, self.now()) if body.place_id in q["place_ids"]]
             updates = [self.database.progress(connection, q, x_user_id) for q in quests]
         xp = place["checkin_xp"] if reason is None else 0
         return dict(demo=self.demo(), ok=reason is None, distance_m=meters, xp_awarded=xp,
                     league_xp_awarded=xp, reason=reason, community_progress=updates)
+
+    def checkin_rejection(self, body, place, in_live_quest):
+        location = body.location.model_dump()
+        if body.simulated and not self.settings.demo_mode:
+            return "simulation_not_allowed"
+        if place["category"] != "free" and not in_live_quest:
+            return "paid_stop_uses_paypal"
+        if not CHECKIN_OPENS_HOUR <= self.now().astimezone(TZ).hour < CHECKIN_CLOSES_HOUR:
+            return "closed_hours"
+        if body.simulated:
+            return None
+        if body.accuracy_m > MAX_ACCURACY_M:
+            return "low_accuracy"
+        return "too_far" if distance(location, place["location"]) > CHECKIN_RADIUS_M else None
 
     def create_quest(self, body: CreateQuestRequest, x_merchant_id):
         merchant = next((p for p in self.catalog if p["place_id"] == x_merchant_id and p["partner"]), None)
@@ -133,5 +139,7 @@ class MapService:
                      reward={"badge": "local_explorer", "xp": 40})
         quest["ends_at"] = body.ends_at.astimezone(TZ).isoformat()
         with self.database.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            self.database.remove_live_quests(connection, x_merchant_id, self.now())
             self.database.save_quest(connection, quest)
         return dict(demo=self.demo(), id=quest_id, status="live", places_in_zone=len(inside))
