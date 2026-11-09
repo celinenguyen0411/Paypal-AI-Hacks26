@@ -1,8 +1,9 @@
-from datetime import timedelta
+from datetime import datetime, timedelta
 from uuid import uuid4
 
 from .ask_schemas import AskResponse, ExtractedIntent, SwapResponse
 from .errors import APIError
+from .config import TZ
 from .route_solver import DWELL_S, NoPlacesFit, Trip, solve
 from .seed import CAMPUS
 
@@ -60,7 +61,7 @@ class PlanningService:
             totals = plan["totals"]
             status = "over" if totals["over_budget"] else "within"
             fallback = (f"Estimated cost: ${totals['cost_cents'] / 100:.2f}, {status} your budget. "
-                        f"Estimated return: {totals['return_at']}. Prices and walking times are estimates.")
+                        f"Estimated return: {self.clock_label(totals['return_at'])}. Prices and walking times are estimates.")
             reply = self.ai.explain(plan, fallback)
         response = AskResponse.model_validate(dict(
             demo=self.maps.demo(), kind=kind, conversation_id=conversation_id, reply=reply,
@@ -93,6 +94,10 @@ class PlanningService:
         self.database.save_exchange(conversation_id, user, state, response["plan"],
                                     dict(context, forced=forced, stop_needs=stop_needs))
         return response
+
+    @staticmethod
+    def clock_label(iso_time):
+        return datetime.fromisoformat(iso_time).astimezone(TZ).strftime("%I:%M %p").lstrip("0")
 
     def clarification(self, intent):
         if intent.diet:
