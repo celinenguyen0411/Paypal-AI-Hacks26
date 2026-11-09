@@ -79,6 +79,16 @@ export function MapExperience() {
     if (place) selectPlace(place);
   };
 
+  const openTab = (id: TabId) => {
+    setTab(id);
+    setSelected(null);
+  };
+
+  const openStudio = () => {
+    setSelected(null);
+    setStudioOpen(true);
+  };
+
   const reset = () => {
     planner.startOver();
     setSelected(null);
@@ -100,7 +110,7 @@ export function MapExperience() {
         </header>
         <div className="tabs" role="tablist" aria-label="Map views">
           {TABS.map(({ id, label }) => (
-            <button key={id} type="button" role="tab" aria-selected={tab === id} onClick={() => setTab(id)}>
+            <button key={id} type="button" role="tab" aria-selected={tab === id} onClick={() => openTab(id)}>
               {label}
             </button>
           ))}
@@ -110,7 +120,7 @@ export function MapExperience() {
           <NearbyPanel nearby={nearby} selectedId={selected?.place_id ?? null} onSelect={selectPlace} />
         )}
         {tab === "quests" && !studioOpen && (
-          <QuestsPanel quests={quests} checkin={checkin} onOpenStudio={() => setStudioOpen(true)} />
+          <QuestsPanel quests={quests} checkin={checkin} onOpenStudio={openStudio} />
         )}
         {tab === "quests" && studioOpen && (
           <MerchantStudio
