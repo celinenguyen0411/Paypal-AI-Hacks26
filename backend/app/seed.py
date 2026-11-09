@@ -3,6 +3,10 @@
 CAMPUS = {"lat": 43.0761, "lng": -89.3999}
 FROZEN_AT = "2026-11-04T12:30:00-06:00"
 SEEDED_QUEST_ID = "cq_state_st"
+WEDNESDAY_PROMPT = "Wed 12:30: lunch, coffee and a few groceries before my 2pm class. $30 max."
+WEDNESDAY_INTENT = dict(kind="route_plan", budget_cents=3000,
+                        needs=[dict(category="lunch"), dict(category="coffee"), dict(category="groceries")],
+                        deadline="2026-11-04T14:00:00-06:00")
 
 
 def place(place_id, name, category, lat, lng, cost, partner=False, sponsored=False):

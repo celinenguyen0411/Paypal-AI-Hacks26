@@ -60,7 +60,7 @@ def test_startup_caches_snapshot_and_uses_catalog_for_quests(tmp_path):
         assert {"fsq:one", "fsq:two"} <= {p["place_id"] for p in places["places"]}
         assert places["attributions"] == ["foursquare"]
         body = dict(title="Real catalog quest", zone_geojson=ZONE,
-                    place_ids=["fsq:one", "fsq:two"], needed_visits=2,
+                    place_ids=["fsq:one", "fsq:two", "m_mamalin"], needed_visits=2,
                     ends_at="2026-11-09T23:59:00-06:00")
         assert client.post("/merchant/community-quests", json=body).status_code == 201
         checkin = dict(place_id="fsq:one", location={"lat": 43.0761, "lng": -89.3999}, accuracy_m=10)

@@ -83,6 +83,12 @@ class Progress(BaseModel):
     completed: bool
 
 
+class QuestReward(BaseModel):
+    quest_id: str
+    badge: str
+    xp: int
+
+
 class CheckinResponse(Envelope):
     ok: bool
     distance_m: int
@@ -91,6 +97,7 @@ class CheckinResponse(Envelope):
     reason: Literal["too_far", "low_accuracy", "already_today", "daily_cap",
                     "closed_hours", "paid_stop_uses_paypal", "simulation_not_allowed"] | None
     community_progress: list[Progress]
+    quest_rewards: list[QuestReward] = []
 
 
 class Quest(BaseModel):
