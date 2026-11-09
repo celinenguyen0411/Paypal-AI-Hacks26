@@ -34,7 +34,7 @@ class MapService:
     def demo(self):
         return {"frozen_at": FROZEN_AT, "location": CAMPUS} if self.settings.demo_mode else None
 
-    def places(self, lat, lng, walk_min, categories):
+    def places(self, lat, lng, walk_min, categories, user):
         if walk_min not in (5, 10, 15):
             raise APIError("invalid_walk_min", "Use a walking limit of 5, 10, or 15 minutes.")
         selected = {category.strip() for category in categories.split(",")}
@@ -42,7 +42,7 @@ class MapService:
             raise APIError("invalid_categories", "Use coffee, lunch, groceries, or free.")
         origin, radius = dict(lat=lat, lng=lng), walk_min * 60 * WALK_SPEED_M_S
         with self.database.connect() as connection:
-            quests = self.database.active_quests(connection, self.now())
+            quests = self.database.active_quests(connection, self.now(), user)
         result = []
         for seed in self.catalog:
             meters = distance(origin, seed["location"])
@@ -60,14 +60,17 @@ class MapService:
     def community_quests(self, lat, lng, x_user_id):
         result = []
         with self.database.connect() as connection:
-            for quest in self.database.active_quests(connection, self.now()):
+            for quest in self.database.active_quests(connection, self.now(), x_user_id):
                 polygon = shape(quest["zone_geojson"])
                 # Approximate the closest boundary point, then measure its great-circle distance.
                 nearest = polygon.exterior.interpolate(polygon.exterior.project(Point(lng, lat)))
                 if not polygon.covers(Point(lng, lat)) and distance(
                         dict(lat=lat, lng=lng), dict(lat=nearest.y, lng=nearest.x)) > 2000:
                     continue
-                result.append(dict(quest, progress={"visited": self.database.progress(connection, quest, x_user_id)["visited"]}))
+                result.append(dict(quest, progress={
+                    "visited": self.database.progress(connection, quest, x_user_id)["visited"],
+                    "rewarded": int(self.database.quest_rewarded(connection, x_user_id, quest["id"])),
+                }))
         return dict(demo=self.demo(), source="fallback_seeded", quests=result)
 
     def checkin(self, body: CheckinRequest, x_user_id):
@@ -79,17 +82,24 @@ class MapService:
         with self.database.connect() as connection:
             # Serialize the read/check/award so concurrent retries cannot duplicate XP or exceed the cap.
             connection.execute("BEGIN IMMEDIATE")
-            quests = [q for q in self.database.active_quests(connection, self.now()) if body.place_id in q["place_ids"]]
+            quests = [q for q in self.database.active_quests(connection, self.now(), x_user_id)
+                      if body.place_id in q["place_ids"]]
             reason = self.checkin_rejection(body, place, bool(quests))
             if reason is None:
                 reason = self.database.record_visit(
                     connection, x_user_id, body.place_id, today, timestamp,
-                    place["checkin_xp"], DAILY_XP_CAP,
+                    place["checkin_xp"], DAILY_XP_CAP, body.simulated,
                 )
             updates = [self.database.progress(connection, q, x_user_id) for q in quests]
+            rewards = self.award_completed(connection, x_user_id, quests, updates) if reason is None else []
         xp = place["checkin_xp"] if reason is None else 0
         return dict(demo=self.demo(), ok=reason is None, distance_m=meters, xp_awarded=xp,
-                    league_xp_awarded=xp, reason=reason, community_progress=updates)
+                    league_xp_awarded=xp, reason=reason, community_progress=updates, quest_rewards=rewards)
+
+    def award_completed(self, connection, user, quests, updates):
+        return [dict(quest_id=quest["id"], badge=quest["reward"]["badge"], xp=quest["reward"]["xp"])
+                for quest, update in zip(quests, updates)
+                if update["completed"] and self.database.award_quest(connection, user, quest["id"])]
 
     def checkin_rejection(self, body, place, in_live_quest):
         location = body.location.model_dump()
@@ -105,7 +115,7 @@ class MapService:
             return "low_accuracy"
         return "too_far" if distance(location, place["location"]) > CHECKIN_RADIUS_M else None
 
-    def create_quest(self, body: CreateQuestRequest, x_merchant_id):
+    def create_quest(self, body: CreateQuestRequest, x_merchant_id, x_user_id):
         merchant = next((p for p in self.catalog if p["place_id"] == x_merchant_id and p["partner"]), None)
         if merchant is None:
             raise APIError("invalid_merchant", "Choose a seeded partner merchant.")
@@ -130,16 +140,21 @@ class MapService:
         inside = {p["place_id"] for p in self.catalog if polygon.covers(Point(p["location"]["lng"], p["location"]["lat"]))}
         if not ids <= inside:
             raise APIError("invalid_places", "Every participating place must exist and lie inside the zone.")
+        if x_merchant_id not in ids:
+            raise APIError("merchant_not_in_quest", "Include your own shop in the quest.")
         if not body.title.strip():
             raise APIError("invalid_title", "Give the quest a title.")
         quest_id = "cq_" + uuid4().hex[:12]
+        creator = x_user_id if self.settings.demo_mode else None
         quest = dict(id=quest_id, **body.model_dump(mode="json"),
                      sponsor={"merchant_id": x_merchant_id, "name": merchant["name"]},
                      starts_at=self.now().isoformat(), purchase_required=False,
+                     created_by=creator,
                      reward={"badge": "local_explorer", "xp": 40})
         quest["ends_at"] = body.ends_at.astimezone(TZ).isoformat()
         with self.database.connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
-            self.database.remove_live_quests(connection, x_merchant_id, self.now())
+            self.database.remove_live_quests(connection, x_merchant_id, creator, self.now())
+            quest["after_visit_id"] = self.database.latest_visit_id(connection)
             self.database.save_quest(connection, quest)
         return dict(demo=self.demo(), id=quest_id, status="live", places_in_zone=len(inside))

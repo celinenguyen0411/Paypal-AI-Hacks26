@@ -15,6 +15,7 @@ from .services import MapService
 from .ai import AIClient
 from .ask_routes import ask_router
 from .planning import PlanningService
+from .rate_limit import ASK_LIMIT, QUEST_LIMIT, RateLimiter
 
 
 def create_app(db_path=None, demo_mode=None, places_path=None):
@@ -33,6 +34,8 @@ def create_app(db_path=None, demo_mode=None, places_path=None):
                   responses={422: {"model": Error}, 404: {"model": Error}})
     app.state.map_service = service
     app.state.planning_service = PlanningService(service, AIClient(settings))
+    app.state.ask_limiter = RateLimiter(ASK_LIMIT)
+    app.state.quest_limiter = RateLimiter(QUEST_LIMIT)
     app.add_middleware(CORSMiddleware,
                        allow_origins=list(settings.cors_origins),
                        allow_methods=["GET", "POST"],

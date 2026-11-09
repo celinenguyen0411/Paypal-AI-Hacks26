@@ -56,12 +56,11 @@ class AIClient:
         try:
             result = self._parse(PlanReply,
                 "Explain this computed outing plan in at most three sentences. "
-                "Use only supplied facts and amounts. State prices and walking times are estimates. "
-                "Mention over-budget status and return time. Write exact dollar amounts with cents, like $30.50, and times like 1:16 PM; "
-                "never show cents, seconds, or ISO dates. Do not state how long the walk or outing takes, "
-                "because duration_s includes time spent at stops. Do not claim opening hours, deals, "
-                "dietary suitability, verified spending, or rewards not in the plan.",
-                {"plan": plan})
+                "Use only supplied facts and copy every amount and time exactly as written. "
+                "State prices and walking times are estimates. Mention the budget status and return time. "
+                "Do not state how long the walk or outing takes. Do not claim opening hours, deals, "
+                "dietary suitability, verified spending, or rewards not in the facts.",
+                {"facts": plan})
             return result.reply
         except APIError:
             # A narration failure must not discard a plan already computed successfully.
